@@ -119,6 +119,18 @@ def test_print_page_contains_qr_and_asset_number(admin):
     assert "@page { size: A4" in html
 
 
+def test_name_is_not_printed_by_default(admin):
+    """名称の印刷は、初期状態ではオフ（チェックを入れたときだけ印刷する）。"""
+    page = admin.get("/admin/labels").text
+    box = re.search(r'<input type="checkbox" name="show_name"[^>]*>', page).group(0)
+    assert "checked" not in box
+    a, _ = add_asset(name="既定では印刷されない名称")
+    # チェックなし（フォームの既定のまま送信）：QRと管理番号だけ
+    data = {"nos": [a], "size_mm": "30", "cut": "grid", "csrf_token": token(admin, "/admin/labels")}
+    html = admin.post("/admin/labels/print", data=data).text
+    assert a in html and "既定では印刷されない名称" not in html and html.count("<svg") == 1
+
+
 def test_print_page_without_names(admin):
     a, _ = add_asset(name="名称は印刷しない")
     html = print_labels(admin, [a], show_name="").text
