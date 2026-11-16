@@ -43,8 +43,13 @@
       },
       async function (err) {
         // 拒否・タイムアウト時は位置情報なしで記録する
-        show('<span class="err">取得できませんでした：' + err.message + "</span>");
-        try { await save({ label: label.value, error_message: err.message.slice(0, 200) }); } catch (e) {}
+        const kinds = { 1: "許可されていません（拒否）", 2: "位置を取得できません", 3: "時間切れ" };
+        const detail = "コード" + err.code + "：" + (kinds[err.code] || "不明") + (err.message ? "（" + err.message + "）" : "");
+        const hint = err.code === 1
+          ? "<br>iPhoneの「設定→プライバシーとセキュリティ→位置情報サービス→Safari Webサイト」と、Safariの「ぁあ→Webサイトの設定→位置情報」を確認してください。"
+          : "";
+        show('<span class="err">取得できませんでした。' + detail + "</span>" + hint);
+        try { await save({ label: label.value, error_message: detail.slice(0, 200) }); } catch (e) {}
         btn.disabled = false;
       },
       { enableHighAccuracy: true, timeout: 20000, maximumAge: 0 }

@@ -19,6 +19,23 @@ def test_geo_save_and_list():
         assert "pytest" in page.text
 
 
+def test_japanese_label_is_saved_correctly():
+    """日本語のメモが「?」に化けずに保存されること（VARCHARだと化ける）。"""
+    from sqlalchemy import select
+    from sqlalchemy.orm import Session
+
+    from app.db import get_engine
+    from app.models import GeoTest
+
+    label = "3F会議室A前（テスト）"
+    with TestClient(app) as client:
+        res = client.post("/test/geo", json={"label": label, "latitude": 35.0, "longitude": 139.0})
+        assert res.status_code == 200
+        row_id = res.json()["id"]
+    with Session(get_engine()) as s:
+        assert s.scalar(select(GeoTest.label).where(GeoTest.id == row_id)) == label
+
+
 def test_geo_rejects_bad_latitude():
     with TestClient(app) as client:
         res = client.post("/test/geo", json={"latitude": 999, "longitude": 0})
