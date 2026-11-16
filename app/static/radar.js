@@ -52,9 +52,26 @@
     ctx.beginPath(); ctx.arc(x, y, 8, 0, Math.PI * 2); ctx.fill();
   }
 
+  // 詳細（数値）：方角が合わないときに、実際の位置関係と見比べるための表示（この端末の画面だけ）
+  function showDebug(j) {
+    const f = (v, n) => (v == null ? "なし" : v.toFixed(n));
+    const lines = [
+      "現在地　　：緯度 " + f(me.lat, 6) + " ／ 経度 " + f(me.lon, 6) + " ／ 誤差 " + f(me.accuracy, 0) + "m",
+      "備品の位置：緯度 " + f(asset.lat, 6) + " ／ 経度 " + f(asset.lon, 6) + " ／ 誤差 " + f(asset.accuracy, 0) + "m",
+      "最後の記録：" + (asset.seen || "なし"),
+    ];
+    if (j && j.state !== "unknown") {
+      lines.push("距離　　　：" + f(j.distance, 1) + "m（誤差の合成 約" + f(j.uncertainty, 0) + "m）");
+      lines.push("備品の方位：" + f(j.bearing, 0) + "°（" + M.compassName(j.bearing) + "。北が0°、時計回り）");
+    }
+    lines.push("スマホの向き：" + (heading == null ? "未使用（北が上の表示）" : f(heading, 0) + "°（" + M.compassName(heading) + "）"));
+    document.getElementById("debug").textContent = lines.join("\n");
+  }
+
   function update() {
     if (!me) return;
     const j = M.judge(me, asset);
+    showDebug(j);
     if (j.state === "unknown") {
       msg.textContent = "この備品は、位置が記録されていません。";
       sub.textContent = "備品タグにタッチすると、位置が記録されます。";

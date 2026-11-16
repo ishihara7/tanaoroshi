@@ -72,8 +72,9 @@ def test_radar_page_embeds_position_only_as_numbers(client, make_user, cleanup):
     page = client.get(f"/assets/{no}/radar").text
     assert "<script>alert(1)" not in page  # 名称は無害化される
     data = json.loads(re.search(r'id="radar-data">(.*?)</script>', page, re.S).group(1))
-    assert data == {"lat": 36.29258, "lon": 139.37613, "accuracy": 17}
-    assert "/static/radar.js" in page
+    assert (data["lat"], data["lon"], data["accuracy"]) == (36.29258, 139.37613, 17)
+    assert data["seen"] == ""  # 最後の確認がないときは空
+    assert "/static/radar.js" in page and 'id="debug"' in page  # 数値の詳細の表示欄
 
 
 def test_radar_page_without_position(client, make_user, cleanup):  # noqa: F811

@@ -54,6 +54,14 @@ def test_tag_page_requires_login_and_returns_after_login(client, make_user, asse
     assert page.status_code == 200 and "会議室のノートPC" in page.text
 
 
+def test_tag_page_has_manual_record_button_and_reload_guard(client, make_user, asset):  # noqa: F811
+    login(client, make_user())
+    page = client.get(f"/i/{asset['token']}").text
+    assert 'id="record-btn"' in page  # 記録し直すボタン（自動は、タッチして開いたときだけ）
+    assert "/static/tag_logic.js" in page and "再読み込みしても、記録は更新されません" in page
+    assert client.get("/static/tag_logic.js").status_code == 200
+
+
 def test_unknown_or_disposed_tag_is_404_after_login(client, make_user, asset):  # noqa: F811
     login(client, make_user())
     assert client.get("/i/no-such-token").status_code == 404

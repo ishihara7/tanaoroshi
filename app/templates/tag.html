@@ -10,7 +10,10 @@
 <meta name="csrf" content="{{ csrf_token(request) }}">
 <div class="issued" id="status" data-token="{{ token }}">所在を記録しています…</div>
 <p class="note" id="detail"></p>
-<p><a href="/">ホームへ</a></p>
+<p><button id="record-btn" type="button" class="sub">今の場所で記録し直す</button></p>
+<p><a href="/assets/{{ asset.asset_no }}">備品の詳細（移動履歴）</a> ／ <a href="/">ホームへ</a></p>
+<p class="note">このページを再読み込みしても、記録は更新されません。タグに、もう一度タッチすると記録されます。</p>
+<script src="/static/tag_logic.js"></script>
 <script src="/static/tag.js"></script>
 {% endif %}
 {% endblock %}

@@ -7,6 +7,10 @@
 <p id="msg" style="font-size:1.2rem;font-weight:bold;text-align:center">準備しています…</p>
 <p id="sub" class="note" style="text-align:center"></p>
 <p style="text-align:center"><button id="compass-btn" type="button" class="sub" style="display:none">コンパスを使う（スマホの向きに合わせる）</button></p>
+<details style="margin:12px 0">
+  <summary class="note">詳細（数値）</summary>
+  <pre id="debug" class="note" style="white-space:pre-wrap">取得中…</pre>
+</details>
 <p class="note">この画面を開いている間だけ、スマホの位置を取得します。位置は、この端末の中で計算するだけで、サーバーには送らず、保存もしません。</p>
 <p><a href="/assets/{{ asset.asset_no }}">備品の詳細へ戻る</a></p>
 <script type="application/json" id="radar-data">{{ radar_json|safe }}</script>

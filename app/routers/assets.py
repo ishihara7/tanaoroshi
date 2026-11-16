@@ -13,7 +13,7 @@ from app.db import get_session
 from app.models import Asset, Category, Floor, Scan, User, utcnow
 from app.services.assets import get_asset
 from app.services.geo import to_map_position
-from app.templating import templates
+from app.templating import jst, templates
 
 router = APIRouter()
 
@@ -60,7 +60,8 @@ def radar_page(asset_no: str, request: Request, user: User = Depends(auth.curren
     asset = get_asset(session, asset_no)
     if asset is None or not asset.is_active:
         return RedirectResponse("/assets", status_code=303)
-    data = {"lat": asset.current_lat, "lon": asset.current_lon, "accuracy": asset.current_accuracy_m}
+    data = {"lat": asset.current_lat, "lon": asset.current_lon, "accuracy": asset.current_accuracy_m,
+            "seen": jst(asset.last_seen_at)}
     return templates.TemplateResponse(request, "radar.html", {
         "user": user, "asset": asset,
         # </script> を含む文字列で、ページが壊れないようにする
