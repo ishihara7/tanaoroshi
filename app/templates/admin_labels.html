@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}QRラベルの印刷{% endblock %}
+{% block content %}
+<h1>QRラベルの印刷</h1>
+<p class="note">QRコードと管理番号を並べた、貼り付け用のラベルを印刷します。QRには、NFCタグと同じURL（管理番号ではなく、ランダムなトークン）が入っています。</p>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+<form method="post" action="/admin/labels/print" target="_blank">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+
+  <label for="size_mm">QRの大きさ（本体の1辺。周りの白い余白は、その外側に付きます）</label>
+  <select id="size_mm" name="size_mm">
+    {% for s in sizes %}<option value="{{ s }}" {% if s == default_size %}selected{% endif %}>{{ s }}mm{% if s == default_size %}（推奨）{% endif %}</option>{% endfor %}
+  </select>
+  <p class="note">20mmは近くで読む場所向けの最小、30mmが標準、50mmは少し離れて読む場所向けです。</p>
+
+  <label for="cut">切り取り線</label>
+  <select id="cut" name="cut">
+    <option value="grid" selected>裁断用（隙間なく並べ、行・列を貫く点線）</option>
+    <option value="box">1枚ずつ囲む点線（はさみ向き）</option>
+    <option value="none">なし</option>
+  </select>
+
+  <p><label style="display:inline"><input type="checkbox" name="show_name" value="1" style="width:auto" checked> 名称も印刷する</label></p>
+
+  <h2 style="font-size:1rem">印刷する備品</h2>
+  <p>
+    <button type="button" class="sub" id="all-on">すべて選ぶ</button>
+    <button type="button" class="sub" id="all-off">すべて外す</button>
+  </p>
+  <table>
+    <tr><th></th><th>管理番号</th><th>名称</th></tr>
+    {% for a in assets %}
+    <tr>
+      <td><input type="checkbox" name="nos" value="{{ a.asset_no }}" style="width:auto" checked aria-label="{{ a.asset_no }}を印刷する"></td>
+      <td>{{ a.asset_no }}</td>
+      <td>{{ a.name }}</td>
+    </tr>
+    {% else %}
+    <tr><td colspan="3" class="note">印刷できる備品がありません。</td></tr>
+    {% endfor %}
+  </table>
+  <p><button type="submit">印刷用のページを開く</button></p>
+</form>
+<p class="note">開いたページで、ブラウザの印刷（Ctrl+P）を使います。倍率は「100%（実際のサイズ）」、用紙はA4にしてください（「拡大・縮小して合わせる」は、QRの大きさが変わるため、使いません）。</p>
+<script>
+  document.getElementById("all-on").onclick = function () { document.querySelectorAll('input[name="nos"]').forEach(function (c) { c.checked = true; }); };
+  document.getElementById("all-off").onclick = function () { document.querySelectorAll('input[name="nos"]').forEach(function (c) { c.checked = false; }); };
+</script>
+{% endblock %}

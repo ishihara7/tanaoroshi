@@ -12,7 +12,9 @@ python-dotenv>=1.0
 azure-storage-blob>=12.20
 azure-identity>=1.17
 pillow>=10.4
+segno>=1.6
 
 # テスト
 pytest>=8.0
 httpx>=0.27
+zxing-cpp>=2.2  # QRを実際に読み取るテスト用（無くてもテストは飛ばされる）

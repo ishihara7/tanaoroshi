@@ -25,6 +25,10 @@
 <h2 style="font-size:1rem;margin-top:24px">NFCタグに書き込むURL</h2>
 <p><code id="tag-url" style="word-break:break-all">{{ url }}</code></p>
 <p><button type="button" data-copy-target="tag-url">URLをコピー</button></p>
+<h2 style="font-size:1rem;margin-top:24px">QRコード（同じURL）</h2>
+<p><img src="/admin/assets/{{ asset.asset_no }}/qr.svg" alt="タグ用URLのQRコード" width="180" height="180" style="border:1px solid var(--line);background:#fff"></p>
+<p class="note">NFCタグの代わりに、または一緒に貼れます。読み取ると、NFCタグと同じ画面が開きます。
+  <a href="/admin/assets/{{ asset.asset_no }}/qr.svg" download="qr_{{ asset.asset_no }}.svg">SVGで保存</a> ／ <a href="/admin/labels">ラベルを印刷（QR＋管理番号）</a></p>
 <p class="note">このURLをタグに書き込みます（管理番号そのものはURLに含まれません）。再発行すると、これまでに書き込んだタグは使えなくなります。</p>
 <form class="inline" method="post" action="/admin/assets/{{ asset.asset_no }}/reissue"
       onsubmit="return confirm('URLを再発行します。書き込み済みのタグは使えなくなります。よろしいですか？')">
