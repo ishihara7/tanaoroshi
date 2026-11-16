@@ -16,7 +16,7 @@ Python 3.14 / FastAPI / Jinja2 / SQLAlchemy 2.x / Alembic / SQL Server（ロー�
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # 開発・テスト用（本番は requirements.txt）
 ```
 
 ### 2. 設定ファイル
