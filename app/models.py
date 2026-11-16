@@ -65,11 +65,11 @@ class Floor(Base):
 
 
 class Asset(Base):
-    """備品。管理番号は既存の資産番号（10桁の文字列）。タグのURLには、管理番号ではなく tag_token を使う。"""
+    """備品。管理番号は既存の資産番号（半角英数字1〜20文字。大文字・小文字は区別しない）。タグのURLには、管理番号ではなく tag_token を使う。"""
 
     __tablename__ = "assets"
 
-    asset_no: Mapped[str] = mapped_column(String(10), primary_key=True)
+    asset_no: Mapped[str] = mapped_column(String(20), primary_key=True)
     name: Mapped[str] = mapped_column(Unicode(100))
     category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     tag_token: Mapped[str] = mapped_column(String(20), unique=True)
@@ -91,7 +91,7 @@ class Scan(Base):
     __tablename__ = "scans"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    asset_no: Mapped[str] = mapped_column(String(10), index=True)
+    asset_no: Mapped[str] = mapped_column(String(20), index=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)

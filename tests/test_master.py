@@ -159,9 +159,28 @@ def test_asset_validation_and_duplicate(admin_client):
     no = new_asset_no()
     assert create_asset(admin_client, no).status_code == 303
     assert create_asset(admin_client, no).status_code == 400  # 重複
-    for bad in ["123", "12345678901", "abcdefghij", "１２３４５６７８９０"]:
+    # 半角英数字の1〜20文字だけが有効。ハイフン・空白・全角・日本語・21文字は不可
+    for bad in ["", "AB-12", "AB 12", "ＡＢ１２", "１２３４５６７８９０", "あいう", "A" * 21]:
         assert create_asset(admin_client, bad).status_code == 400
     assert create_asset(admin_client, new_asset_no(), name="").status_code == 400
+
+
+def test_asset_no_accepts_alphanumeric_1_to_20_chars(admin_client):
+    for ok in ["9999A", "9999ab12CD", "9999" + "z" * 16]:  # 5文字、10文字、20文字
+        assert create_asset(admin_client, ok).status_code == 303, ok
+    with Session(get_engine()) as s:
+        assert s.get(Asset, "9999ab12CD").asset_no == "9999ab12CD"  # 入力どおりに保存・表示する
+
+
+def test_asset_no_is_case_insensitive(admin_client):
+    no = "9999Ab" + "".join(random.choices("xyz", k=4))
+    assert create_asset(admin_client, no).status_code == 303
+    assert create_asset(admin_client, no.upper()).status_code == 400  # 大文字違いは、重複
+    assert create_asset(admin_client, no.lower()).status_code == 400
+    # 大文字・小文字を変えたURLでも、同じ備品が開ける
+    assert admin_client.get(f"/admin/assets/{no.lower()}").status_code == 200
+    assert admin_client.get(f"/assets/{no.upper()}").status_code == 200
+    assert no in admin_client.get(f"/assets?q={no.lower()}").text
 
 
 def test_asset_reissue_changes_token(admin_client):

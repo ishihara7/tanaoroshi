@@ -65,11 +65,24 @@ def test_import_skips_duplicates_and_is_rerunnable(admin):
 
 def test_import_rolls_back_everything_on_any_error(admin):
     a, b, _ = nos()
-    body = f"管理番号,名称,種別\n{a},正常な行,\n123456789,先頭の0が消えた行,\n{b},種別違い,存在しない種別\n".encode("utf-8")
+    body = f"管理番号,名称,種別\n{a},正常な行,\nAB-12,ハイフン入りの行,\n{b},種別違い,存在しない種別\n".encode("utf-8")
     r = upload(admin, body)
     assert r.status_code == 400 and "1件も登録していません" in r.text
     assert "3行目" in r.text and "先頭の0が消えていないか" in r.text and "4行目" in r.text
     assert count() == 0  # 正常な行も登録されない
+
+
+def test_import_alphanumeric_and_case_insensitive_duplicates(admin):
+    a = "9996Ab" + "".join(random.choices("xyz", k=4))
+    lines = ["管理番号,名称", f"{a},英数字の番号", f"{a.upper()},大文字違いの重複", f"{a.lower()},小文字違いの重複"]
+    r = upload(admin, "\n".join(lines).encode())
+    assert "1件を登録しました" in r.text and "飛ばした行：2件" in r.text and count() == 1
+    # 登録済みの番号の、大文字違いは、飛ばされる
+    again = upload(admin, f"管理番号,名称\n{a.upper()},登録済みの大文字違い".encode())
+    assert "0件を登録しました" in again.text
+    # 21文字は、誤り
+    too_long = upload(admin, ("管理番号,名称\n" + "A" * 21 + ",長すぎる番号").encode())
+    assert too_long.status_code == 400 and "1〜20文字" in too_long.text
 
 
 def test_import_rejects_missing_header_and_empty(admin):

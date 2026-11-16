@@ -10,7 +10,8 @@ from sqlalchemy.orm import Session
 from app import auth
 from app.db import get_session
 from app.models import Asset, Category, Scan, User
-from app.routers.admin_master import ASSET_NO_RE, _new_token, tag_url
+from app.routers.admin_master import _new_token, tag_url
+from app.services.assets import ASSET_NO_RE, ASSET_NO_RULE
 from app.templating import jst, templates
 
 router = APIRouter()
@@ -77,7 +78,7 @@ def import_run(request: Request, file: UploadFile = File(...), csrf_token: str =
         return _import_page(request, user, error="1行目の見出しに「" + "」「".join(missing) + "」がありません。", status=400)
 
     cats = {c.name: c.id for c in session.scalars(select(Category))}
-    existing = set(session.scalars(select(Asset.asset_no)))
+    existing = {n.upper() for n in session.scalars(select(Asset.asset_no))}  # 大文字・小文字を区別しない
     to_add, skipped, errors, seen = [], [], [], set()
     for i, raw in enumerate(reader, start=2):  # 見出しが1行目
         if len(to_add) + len(skipped) + len(errors) >= MAX_ROWS:
@@ -88,15 +89,15 @@ def import_run(request: Request, file: UploadFile = File(...), csrf_token: str =
             continue  # 空行
         no, name, cat, note = row.get("管理番号", ""), row.get("名称", ""), row.get("種別", ""), row.get("備考", "")
         if not ASSET_NO_RE.fullmatch(no):
-            errors.append((i, f"管理番号「{no}」は、半角数字10桁ではありません（Excelで先頭の0が消えていないか確認してください）。"))
+            errors.append((i, f"管理番号「{no}」は、{ASSET_NO_RULE}ではありません（Excelで、先頭の0が消えていないかも確認してください）。"))
         elif not (1 <= len(name) <= 100) or len(note) > 500:
             errors.append((i, "名称は1〜100文字、備考は500文字以内にしてください。"))
         elif cat and cat not in cats:
             errors.append((i, f"種別「{cat}」は登録されていません（先に種別の管理画面で追加してください）。"))
-        elif no in existing or no in seen:
+        elif no.upper() in existing or no.upper() in seen:
             skipped.append((i, no))
         else:
-            seen.add(no)
+            seen.add(no.upper())
             to_add.append((no, name, cats.get(cat), note))
 
     if errors:  # 1件でも誤りがあれば、何も登録しない（直して、もう一度取り込めるようにする）

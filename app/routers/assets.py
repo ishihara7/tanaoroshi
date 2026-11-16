@@ -11,6 +11,7 @@ from app import auth
 from app.config import load_settings
 from app.db import get_session
 from app.models import Asset, Category, Floor, Scan, User, utcnow
+from app.services.assets import get_asset
 from app.services.geo import to_map_position
 from app.templating import templates
 
@@ -40,13 +41,13 @@ def search_page(request: Request, q: str = "", user: User = Depends(auth.current
 @router.get("/assets/{asset_no}", response_class=HTMLResponse)
 def detail_page(asset_no: str, request: Request, user: User = Depends(auth.current_user),
                 session: Session = Depends(get_session)):
-    asset = session.get(Asset, asset_no)
+    asset = get_asset(session, asset_no)
     if not _visible(asset, user):
         return RedirectResponse("/assets", status_code=303)
     category = session.get(Category, asset.category_id) if asset.category_id else None
     rows = session.execute(
         select(Scan, User.display_name).join(User, User.id == Scan.user_id, isouter=True)
-        .where(Scan.asset_no == asset_no).order_by(Scan.id.desc()).limit(HISTORY_LIMIT)
+        .where(Scan.asset_no == asset.asset_no).order_by(Scan.id.desc()).limit(HISTORY_LIMIT)
     ).all()
     return templates.TemplateResponse(request, "asset_detail.html", {
         "user": user, "asset": asset, "category": category,
@@ -56,7 +57,7 @@ def detail_page(asset_no: str, request: Request, user: User = Depends(auth.curre
 @router.get("/assets/{asset_no}/radar", response_class=HTMLResponse)
 def radar_page(asset_no: str, request: Request, user: User = Depends(auth.current_user),
                session: Session = Depends(get_session)):
-    asset = session.get(Asset, asset_no)
+    asset = get_asset(session, asset_no)
     if asset is None or not asset.is_active:
         return RedirectResponse("/assets", status_code=303)
     data = {"lat": asset.current_lat, "lon": asset.current_lon, "accuracy": asset.current_accuracy_m}

@@ -23,12 +23,12 @@
 <p>1行目に見出しを書いた、CSVファイルを選んでください（UTF-8 または Shift_JIS）。</p>
 <table>
   <tr><th>見出し</th><th>内容</th></tr>
-  <tr><td>管理番号（必須）</td><td>半角数字10桁（先頭の0も含める）</td></tr>
+  <tr><td>管理番号（必須）</td><td>半角英数字、20文字まで（大文字・小文字は区別しません）</td></tr>
   <tr><td>名称（必須）</td><td>100文字まで</td></tr>
   <tr><td>種別</td><td>登録済みの種別名（空でも可）</td></tr>
   <tr><td>備考</td><td>500文字まで</td></tr>
 </table>
-<p class="note">Excelで管理番号の先頭の0が消えるときは、列の書式を「文字列」にしてから入力してください。1件でも誤りがあると、何も登録されません。登録済みの管理番号は、飛ばされます。</p>
+<p class="note">Excelで、管理番号の先頭の0が消えるときは、列の書式を「文字列」にしてから入力してください。1件でも誤りがあると、何も登録されません。登録済みの管理番号は、飛ばされます。</p>
 
 <form method="post" action="/admin/assets-import" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

@@ -14,11 +14,11 @@ from app import auth, storage
 from app.config import load_settings
 from app.db import get_session
 from app.models import Asset, Category, Floor, User
+from app.services.assets import ASSET_NO_RE, ASSET_NO_RULE, get_asset
 from app.templating import templates
 
 router = APIRouter()
 
-ASSET_NO_RE = re.compile(r"[0-9]{10}")  # \d は全角数字も通すため、半角の0〜9に限定する（fullmatchで使う）
 MAX_IMAGE_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_PIXELS = 8000
 CSRF_ERROR = "画面の有効期限が切れました。もう一度お試しください。"
@@ -230,12 +230,12 @@ def asset_create(request: Request, asset_no: str = Form(""), name: str = Form(""
         return _assets_page(request, session, user, error=CSRF_ERROR, status=400)
     asset_no, name, note = asset_no.strip(), name.strip(), note.strip()
     if not ASSET_NO_RE.fullmatch(asset_no):
-        return _assets_page(request, session, user, error="管理番号は、半角数字10桁で入力してください（先頭の0も含めます）。", status=400)
+        return _assets_page(request, session, user, error=f"管理番号は、{ASSET_NO_RULE}で入力してください。", status=400)
     if not (1 <= len(name) <= 100) or len(note) > 500:
         return _assets_page(request, session, user, error="名称は1〜100文字、備考は500文字以内にしてください。", status=400)
     cat_id = int(category_id) if category_id.isdigit() and session.get(Category, int(category_id)) else None
-    if session.get(Asset, asset_no):
-        return _assets_page(request, session, user, error="その管理番号は、すでに登録されています。", status=400)
+    if get_asset(session, asset_no):
+        return _assets_page(request, session, user, error="その管理番号は、すでに登録されています（大文字・小文字は区別しません）。", status=400)
     session.add(Asset(asset_no=asset_no, name=name, category_id=cat_id, note=note, tag_token=_new_token(session)))
     session.commit()
     return RedirectResponse(f"/admin/assets/{asset_no}", status_code=303)
@@ -250,7 +250,7 @@ def _asset_page(request, session, user, asset, *, error=None, saved=False, statu
 @router.get("/admin/assets/{asset_no}", response_class=HTMLResponse)
 def asset_edit_page(asset_no: str, request: Request, saved: int = 0,
                     user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
-    asset = session.get(Asset, asset_no)
+    asset = get_asset(session, asset_no)
     if asset is None:
         return RedirectResponse("/admin/assets", status_code=303)
     return _asset_page(request, session, user, asset, saved=bool(saved))
@@ -260,7 +260,7 @@ def asset_edit_page(asset_no: str, request: Request, saved: int = 0,
 def asset_update(asset_no: str, request: Request, name: str = Form(""), category_id: str = Form(""),
                  note: str = Form(""), csrf_token: str = Form(""),
                  user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
-    asset = session.get(Asset, asset_no)
+    asset = get_asset(session, asset_no)
     if asset is None:
         return RedirectResponse("/admin/assets", status_code=303)
     if not auth.check_csrf(request, csrf_token):
@@ -278,7 +278,7 @@ def asset_update(asset_no: str, request: Request, name: str = Form(""), category
 def asset_reissue(asset_no: str, request: Request, csrf_token: str = Form(""),
                   user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
     """タグのURLを作り直す。古いタグは無効になる（タグの貼り替えが必要）。"""
-    asset = session.get(Asset, asset_no)
+    asset = get_asset(session, asset_no)
     if asset is None or not auth.check_csrf(request, csrf_token):
         return RedirectResponse("/admin/assets", status_code=303)
     asset.tag_token = _new_token(session)
@@ -290,7 +290,7 @@ def asset_reissue(asset_no: str, request: Request, csrf_token: str = Form(""),
 def asset_dispose(asset_no: str, request: Request, csrf_token: str = Form(""),
                   user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
     """廃棄（台帳から非表示）／戻す。履歴は残る。"""
-    asset = session.get(Asset, asset_no)
+    asset = get_asset(session, asset_no)
     if asset is None or not auth.check_csrf(request, csrf_token):
         return RedirectResponse("/admin/assets", status_code=303)
     asset.is_active = not asset.is_active
