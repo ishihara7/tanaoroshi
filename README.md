@@ -3,6 +3,8 @@
 備品のNFCタグをiPhoneでタッチすると、GPS位置を記録し、フロア図上に表示するシステム（PoC）。
 
 - 要件：[docs/要件定義書.md](docs/要件定義書.md)
+- 運用手順書（セットアップ、タグの書き込み、日常の使い方、デプロイ）：[docs/運用手順書.md](docs/運用手順書.md)
+- Azure 環境の定義（Bicep）：[infra/README.md](infra/README.md)
 - 元の依頼書：[HANDOFF_備品所在管理システム.md](HANDOFF_備品所在管理システム.md)
 
 ## 技術スタック
