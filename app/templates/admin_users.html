@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}ユーザー管理{% endblock %}
+{% block content %}
+<h1>ユーザー管理</h1>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+{% if issued %}
+<div class="issued">
+  <p><strong>{{ issued.login_id }}</strong> の初期パスワードを{{ issued.action }}しました。<br>
+  この画面を閉じると二度と表示されません。本人に安全な方法で伝えてください。</p>
+  <p><code>{{ issued.password }}</code></p>
+</div>
+{% endif %}
+
+<h2 style="font-size:1rem">ユーザーを追加</h2>
+<form method="post" action="/admin/users">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label for="login_id">ログインID（英数字・ハイフン・アンダースコア、3〜30文字）</label>
+  <input id="login_id" name="login_id" autocapitalize="none" autocorrect="off" required>
+  <label for="display_name">表示名</label>
+  <input id="display_name" name="display_name" maxlength="50" required>
+  <label for="role">権限</label>
+  <select id="role" name="role">
+    <option value="user">一般</option>
+    <option value="admin">管理者</option>
+  </select>
+  <p><button type="submit">追加（初期パスワードを自動で発行）</button></p>
+</form>
+
+<h2 style="font-size:1rem">ユーザー一覧</h2>
+<table>
+  <tr><th>ID</th><th>表示名</th><th>権限</th><th>状態</th><th></th></tr>
+  {% for u in users %}
+  <tr>
+    <td>{{ u.login_id }}</td>
+    <td>{{ u.display_name }}</td>
+    <td>{{ '管理者' if u.role == 'admin' else '一般' }}</td>
+    <td>{{ '有効' if u.is_active else '無効' }}{% if u.must_change_password %}（初期PW）{% endif %}</td>
+    <td>
+      <form class="inline" method="post" action="/admin/users/{{ u.id }}/reset">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button class="sub" type="submit">PW初期化</button>
+      </form>
+      {% if u.id != user.id %}
+      <form class="inline" method="post" action="/admin/users/{{ u.id }}/toggle">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button class="sub" type="submit">{{ '無効にする' if u.is_active else '有効にする' }}</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}
