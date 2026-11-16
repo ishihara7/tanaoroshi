@@ -30,6 +30,7 @@ def csrf_of(client, path):
 
 
 def post_scan(client, token, csrf, body):
+    body = {"employee_no": "E1001", **body}  # 社員番号は必須（指定がなければ、既定の番号を使う）
     return client.post(f"/i/{token}/scan", json=body, headers={"X-CSRF-Token": csrf})
 
 
@@ -61,6 +62,44 @@ def test_tag_page_has_manual_record_button_and_reload_guard(client, make_user, a
     assert "/static/tag_logic.js" in page and "再読み込みしても、記録は更新されません" in page
     assert "最大8秒" in page  # 位置を取る時間の説明
     assert client.get("/static/tag_logic.js").status_code == 200
+
+
+def test_tag_page_has_employee_no_input(client, make_user, asset):  # noqa: F811
+    login(client, make_user())
+    page = client.get(f"/i/{asset['token']}").text
+    assert 'id="employee-no"' in page and 'id="submit-btn"' in page  # 位置を調べている間に入力する欄と、記録ボタン
+    assert "氏名は扱いません" in page
+
+
+def test_scan_saves_employee_no_only(client, make_user, asset):  # noqa: F811
+    login(client, make_user())
+    csrf = csrf_of(client, f"/i/{asset['token']}")
+    r = post_scan(client, asset["token"], csrf, {"latitude": 36.0, "longitude": 139.0, "accuracy_m": 12, "employee_no": " AB12cd "})
+    assert r.status_code == 200
+    with Session(get_engine()) as s:
+        scan = s.scalar(select(Scan).where(Scan.asset_no == asset["no"]))
+        assert scan.employee_no == "AB12cd"  # 前後の空白は除く。大文字・小文字は入力どおり
+
+
+def test_scan_rejects_missing_or_invalid_employee_no(client, make_user, asset):  # noqa: F811
+    login(client, make_user())
+    csrf = csrf_of(client, f"/i/{asset['token']}")
+    for bad in ["", "   ", "12 34", "社員1234", "１２３４", "ab-12", "A" * 21]:
+        r = client.post(f"/i/{asset['token']}/scan", json={"employee_no": bad, "latitude": 36.0, "longitude": 139.0},
+                        headers={"X-CSRF-Token": csrf})
+        assert r.status_code == 400 and "社員番号" in r.json()["message"], bad
+    r = client.post(f"/i/{asset['token']}/scan", json={"latitude": 36.0, "longitude": 139.0}, headers={"X-CSRF-Token": csrf})
+    assert r.status_code == 400  # 社員番号の指定なし
+    assert count_scans(asset["no"]) == 0  # どれも保存されない
+
+
+def test_dedupe_is_per_employee_no(client, make_user, asset):  # noqa: F811
+    """共通のアカウントでも、別の社員番号の記録は、別々に保存する。"""
+    login(client, make_user())
+    csrf = csrf_of(client, f"/i/{asset['token']}")
+    post_scan(client, asset["token"], csrf, {"latitude": 36.0, "longitude": 139.0, "employee_no": "A1"})
+    r = post_scan(client, asset["token"], csrf, {"latitude": 36.0, "longitude": 139.0, "employee_no": "B2"})
+    assert r.json()["deduped"] is False and count_scans(asset["no"]) == 2
 
 
 def test_unknown_or_disposed_tag_is_404_after_login(client, make_user, asset):  # noqa: F811

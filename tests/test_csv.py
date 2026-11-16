@@ -115,11 +115,11 @@ def test_export_scans(admin):
     (a,) = nos(1)
     upload(admin, f"管理番号,名称\n{a},履歴用\n".encode())
     with Session(get_engine()) as s:
-        s.add(Scan(asset_no=a, user_id=1, latitude=36.0, longitude=139.0, accuracy_m=15))
+        s.add(Scan(asset_no=a, user_id=1, employee_no="E55", latitude=36.0, longitude=139.0, accuracy_m=15))
         s.commit()
     rows = list(csv.reader(io.StringIO(admin.get("/admin/export/scans.csv").content.decode("utf-8-sig"))))
-    assert rows[0][:3] == ["日時", "管理番号", "名称"]
-    assert any(x[1] == a and x[2] == "履歴用" and x[4] == "36.0" for x in rows)
+    assert rows[0][:4] == ["日時", "管理番号", "名称", "社員番号"] and "記録者" not in rows[0]  # 氏名・アカウント名は、出さない
+    assert any(x[1] == a and x[2] == "履歴用" and x[3] == "E55" and x[4] == "36.0" for x in rows)
 
 
 def test_csv_pages_are_admin_only(client, make_user):  # noqa: F811

@@ -50,10 +50,14 @@ def test_detail_shows_history_with_display_name(client, make_user, cleanup):  # 
     no = add_asset(last_seen_at=utcnow(), current_lat=36.0, current_lon=139.0, current_accuracy_m=17)
     with Session(get_engine()) as s:
         user_id = s.scalar(select(User.id).where(User.login_id == uid))
-        s.add(Scan(asset_no=no, user_id=user_id, latitude=36.0, longitude=139.0, accuracy_m=17))
+        s.add(Scan(asset_no=no, user_id=user_id, employee_no="E1234", latitude=36.0, longitude=139.0, accuracy_m=17))
+        s.add(Scan(asset_no=no, user_id=user_id, latitude=36.0, longitude=139.0, accuracy_m=20))  # 社員番号がない古い記録
         s.commit()
     page = client.get(f"/assets/{no}").text
-    assert "テスト太郎" in page and "約17m" in page and f"/assets/{no}/radar" in page
+    assert "E1234" in page and "約17m" in page and f"/assets/{no}/radar" in page
+    history_table = page.split("移動履歴")[1]
+    assert "テスト太郎" not in history_table  # 履歴には、氏名（表示名）を出さない（画面上部の、ログイン中の自分の表示は、別）
+    assert "<th>社員番号</th>" in history_table and "—" in history_table  # 古い記録は、ダッシュで表示
 
 
 def test_detail_of_disposed_asset_is_hidden_from_users(client, make_user, cleanup):  # noqa: F811

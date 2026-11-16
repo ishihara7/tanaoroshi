@@ -20,11 +20,11 @@
 
 <h2 style="font-size:1rem">移動履歴（新しい順、最大50件）</h2>
 <table>
-  <tr><th>日時</th><th>記録者</th><th>位置の誤差</th></tr>
-  {% for s, name in history %}
+  <tr><th>日時</th><th>社員番号</th><th>位置の誤差</th></tr>
+  {% for s in history %}
   <tr>
     <td>{{ s.created_at|jst('%m/%d %H:%M') }}</td>
-    <td>{{ name }}</td>
+    <td>{{ s.employee_no or '—' }}</td>
     <td>{% if s.latitude is not none %}約{{ '%.0f'|format(s.accuracy_m or 0) }}m{% else %}<span class="note">位置なし</span>{% endif %}</td>
   </tr>
   {% else %}

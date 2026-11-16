@@ -13,13 +13,21 @@
     <span class="spin"></span>
     <svg class="i-ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
     <svg class="i-err" viewBox="0 0 24 24"><path d="M12 6v7"/><path d="M12 17.5h.01"/></svg>
+    <svg class="i-wait" viewBox="0 0 24 24"><path d="M4 20l4-1 11-11-3-3L5 16z"/></svg>
   </span>
   <span id="status-text">所在を記録しています…</span>
 </div>
 <p class="note" id="detail"></p>
+<div class="card" id="employee-card">
+  <label for="employee-no">社員番号</label>
+  <input id="employee-no" name="employee_no" inputmode="text" autocomplete="off" autocapitalize="none" autocorrect="off"
+         maxlength="20" pattern="[A-Za-z0-9]{1,20}" placeholder="例：1234">
+  <p class="hint">位置を調べている間に、入力してください（半角英数字）。この端末に記憶するので、次回からは、自動で入ります。</p>
+  <p style="margin-bottom:0"><button id="submit-btn" type="button" disabled>記録する</button></p>
+</div>
 <p><button id="record-btn" type="button" class="sub">今の場所で記録し直す</button></p>
 <p><a href="/assets/{{ asset.asset_no }}">備品の詳細（移動履歴）</a> ／ <a href="/">ホームへ</a></p>
-<p class="note">タッチ直後の数秒（最大8秒）だけ、位置を調べて、一番精度のよい位置を記録します。このページを再読み込みしても、記録は更新されません。タグに、もう一度タッチすると記録されます。</p>
+<p class="note">タッチ直後の数秒（最大8秒）だけ、位置を調べて、一番精度のよい位置を記録します。このページを再読み込みしても、記録は更新されません。タグに、もう一度タッチすると記録されます。記録するのは、位置・日時・社員番号だけで、氏名は扱いません。</p>
 <script src="/static/tag_logic.js"></script>
 <script src="/static/tag.js"></script>
 {% endif %}

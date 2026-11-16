@@ -1,4 +1,5 @@
 """備品タグの着地ページ。タッチすると、その瞬間の位置を1回だけ取得して記録する。"""
+import re
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, Request
@@ -17,12 +18,16 @@ router = APIRouter()
 DEDUPE_SECONDS = 10  # 同じ人が同じ備品を続けて読み込んだときは、1件にまとめる（再読み込み対策）
 
 
+EMPLOYEE_NO_RE = re.compile(r"[A-Za-z0-9]{1,20}")  # 社員番号：半角英数字、20文字まで（全角は通さない）
+
+
 class ScanPayload(BaseModel):
     latitude: float | None = Field(default=None, ge=-90, le=90)
     longitude: float | None = Field(default=None, ge=-180, le=180)
     accuracy_m: float | None = Field(default=None, ge=0)
     altitude: float | None = None
     error_message: str = Field(default="", max_length=200)
+    employee_no: str = Field(default="", max_length=40)  # 記録した人の社員番号（氏名は扱わない）
 
 
 def _find_asset(session: Session, token: str) -> Asset | None:
@@ -51,10 +56,15 @@ def tag_scan(token: str, payload: ScanPayload, request: Request, user: User = De
     if asset is None:
         return JSONResponse({"ok": False, "message": "このタグは無効です。"}, status_code=404)
 
+    employee_no = payload.employee_no.strip()
+    if not EMPLOYEE_NO_RE.fullmatch(employee_no):
+        return JSONResponse({"ok": False, "message": "社員番号は、半角英数字（20文字まで）で入力してください。"}, status_code=400)
+
     now = utcnow()
     has_position = payload.latitude is not None and payload.longitude is not None
+    # 共通のアカウントを使うことがあるため、同じ社員番号の連続した読み込みだけを、1件にまとめる
     recent = session.scalar(
-        select(Scan).where(Scan.asset_no == asset.asset_no, Scan.user_id == user.id,
+        select(Scan).where(Scan.asset_no == asset.asset_no, Scan.employee_no == employee_no,
                            Scan.created_at > now - timedelta(seconds=DEDUPE_SECONDS))
         .order_by(Scan.id.desc())
     )
@@ -62,7 +72,7 @@ def tag_scan(token: str, payload: ScanPayload, request: Request, user: User = De
         return {"ok": True, "deduped": True, "position": recent.latitude is not None}
 
     session.add(Scan(
-        asset_no=asset.asset_no, user_id=user.id,
+        asset_no=asset.asset_no, user_id=user.id, employee_no=employee_no,
         latitude=payload.latitude if has_position else None,
         longitude=payload.longitude if has_position else None,
         accuracy_m=payload.accuracy_m if has_position else None,

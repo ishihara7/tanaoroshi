@@ -41,5 +41,21 @@ def test_decide_stops_when_accurate_or_time_is_up():
     assert run_js("T.decide(null, 20000)") == "giveup"  # 20秒で、あきらめる
 
 
+def test_valid_employee_no_matches_the_server_rule():
+    for ok in ["1", "1234", "AB12cd", "A" * 20, " 1234 "]:  # 前後の空白は、無視する
+        assert run_js(f"T.validEmployeeNo({json.dumps(ok)})") is True, ok
+    for bad in ["", "   ", "12 34", "社員1234", "１２３４", "ab-12", "A" * 21, None]:
+        assert run_js(f"T.validEmployeeNo({json.dumps(bad)})") is False, bad
+
+
+def test_after_position_waits_for_the_button_unless_remembered():
+    # 端末に記憶した社員番号があり、自動で記録する場合だけ、すぐ送信する
+    assert run_js('T.afterPosition(true, "1234")') == "send"
+    # 記憶がない（入力されていない）、または、自動記録ではないときは、ボタンの操作を待つ（入力の途中で送信しない）
+    assert run_js('T.afterPosition(true, "")') == "wait"
+    assert run_js('T.afterPosition(false, "1234")') == "wait"
+    assert run_js('T.afterPosition(true, "12 34")') == "wait"
+
+
 def test_constants():
     assert run_js("[T.TARGET_ACCURACY_M, T.MAX_WAIT_MS, T.HARD_TIMEOUT_MS]") == [10, 8000, 20000]

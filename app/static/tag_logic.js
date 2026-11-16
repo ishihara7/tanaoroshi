@@ -40,5 +40,22 @@
     return "continue";
   }
 
-  return { TARGET_ACCURACY_M, MAX_WAIT_MS, HARD_TIMEOUT_MS, shouldAutoRecord, pickBest, decide };
+  // 社員番号：半角英数字、20文字まで（サーバーの判定と同じ。全角は通さない）
+  const EMPLOYEE_NO_RE = /^[A-Za-z0-9]{1,20}$/;
+  function validEmployeeNo(v) {
+    return EMPLOYEE_NO_RE.test(String(v == null ? "" : v).trim());
+  }
+
+  /*
+   * 位置の取得が終わったあとの進め方
+   *   "send" : すぐに送信する（自動で記録する場合で、社員番号が入力済み）
+   *   "wait" : 社員番号の入力と、「記録する」ボタンを待つ
+   * 入力の途中で、勝手に送信されないよう、ボタンの操作を待つのが基本。
+   * 端末に記憶した社員番号がある場合だけ、自動で送信する。
+   */
+  function afterPosition(autoSend, employeeNo) {
+    return autoSend && validEmployeeNo(employeeNo) ? "send" : "wait";
+  }
+
+  return { TARGET_ACCURACY_M, MAX_WAIT_MS, HARD_TIMEOUT_MS, shouldAutoRecord, pickBest, decide, validEmployeeNo, afterPosition };
 });

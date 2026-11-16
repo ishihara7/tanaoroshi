@@ -119,10 +119,10 @@ def export_assets(request: Request, user: User = Depends(auth.require_admin), se
 
 @router.get("/admin/export/scans.csv")
 def export_scans(user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
-    q = (select(Scan, Asset.name, User.display_name)
-         .join(Asset, Asset.asset_no == Scan.asset_no, isouter=True)
-         .join(User, User.id == Scan.user_id, isouter=True).order_by(Scan.id))
-    rows = [(jst(s.created_at, "%Y-%m-%d %H:%M:%S"), s.asset_no, aname or "", uname or "",
+    q = (select(Scan, Asset.name)
+         .join(Asset, Asset.asset_no == Scan.asset_no, isouter=True).order_by(Scan.id))
+    # 記録者は、社員番号だけ（氏名・アカウント名は出さない）
+    rows = [(jst(s.created_at, "%Y-%m-%d %H:%M:%S"), s.asset_no, aname or "", s.employee_no or "",
              s.latitude, s.longitude, s.accuracy_m, s.altitude, s.error_message)
-            for s, aname, uname in session.execute(q).all()]
-    return csv_response("scans.csv", ["日時", "管理番号", "名称", "記録者", "緯度", "経度", "誤差m", "高度", "エラー"], rows)
+            for s, aname in session.execute(q).all()]
+    return csv_response("scans.csv", ["日時", "管理番号", "名称", "社員番号", "緯度", "経度", "誤差m", "高度", "エラー"], rows)

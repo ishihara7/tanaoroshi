@@ -56,6 +56,7 @@ class Scan(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     asset_no: Mapped[str] = mapped_column(String(20), index=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
+    employee_no: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)  # 記録した人の社員番号（旧データは空）
     latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)

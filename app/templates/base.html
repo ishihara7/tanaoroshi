@@ -102,6 +102,8 @@
     .status .spin { width: 20px; height: 20px; border-radius: 50%; border: 3px solid color-mix(in srgb, var(--accent-fg) 35%, transparent); border-top-color: var(--accent-fg); animation: spin .8s linear infinite; }
     .status.is-ok { background: var(--ok-soft); color: var(--ok); }
     .status.is-ok .icon { background: var(--ok); }
+    .status.is-wait .icon { background: var(--accent); }
+    .status.is-wait .icon .i-wait { display: block; }
     .status.is-error { background: var(--err-soft); color: var(--err); }
     .status.is-error .icon { background: var(--err); }
     .status .icon > * { display: none; }

@@ -42,13 +42,11 @@ def detail_page(asset_no: str, request: Request, user: User = Depends(auth.curre
     asset = get_asset(session, asset_no)
     if not _visible(asset, user):
         return RedirectResponse("/assets", status_code=303)
-    rows = session.execute(
-        select(Scan, User.display_name).join(User, User.id == Scan.user_id, isouter=True)
-        .where(Scan.asset_no == asset.asset_no).order_by(Scan.id.desc()).limit(HISTORY_LIMIT)
+    # 記録者は、社員番号だけを表示する（氏名・アカウント名は、出さない）
+    history = session.scalars(
+        select(Scan).where(Scan.asset_no == asset.asset_no).order_by(Scan.id.desc()).limit(HISTORY_LIMIT)
     ).all()
-    return templates.TemplateResponse(request, "asset_detail.html", {
-        "user": user, "asset": asset,
-        "history": [(s, name or "（削除済み）") for s, name in rows]})
+    return templates.TemplateResponse(request, "asset_detail.html", {"user": user, "asset": asset, "history": history})
 
 
 @router.get("/assets/{asset_no}/radar", response_class=HTMLResponse)
