@@ -1,7 +1,7 @@
 """運用コマンド。最初の管理者を作るときに使う。
 
 使い方：
-    python -m app.cli create-admin <ログインID> "<表示名>"
+    python -m app.cli create-admin <ログインID>
 パスワードは、実行時に（画面に表示されない形で）入力する。
 """
 import argparse
@@ -16,7 +16,7 @@ from app.db import Base, get_engine
 from app.models import User
 
 
-def create_admin(login_id: str, display_name: str) -> int:
+def create_admin(login_id: str) -> int:
     login_id = login_id.strip().lower()
     if not auth.LOGIN_ID_RE.match(login_id):
         print("ログインIDは、英数字・ハイフン・アンダースコアの3〜30文字にしてください。")
@@ -36,7 +36,7 @@ def create_admin(login_id: str, display_name: str) -> int:
             print("そのログインIDは、すでに使われています。")
             return 1
         # 本人が自分で決めたパスワードなので、初回の変更は求めない
-        s.add(User(login_id=login_id, display_name=display_name.strip(), role="admin",
+        s.add(User(login_id=login_id, role="admin",
                    password_hash=auth.hash_password(password), must_change_password=False))
         s.commit()
     print(f"管理者「{login_id}」を作成しました。")
@@ -48,10 +48,9 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("create-admin", help="管理者ユーザーを作成する")
     p.add_argument("login_id")
-    p.add_argument("display_name")
     args = parser.parse_args()
     if args.command == "create-admin":
-        return create_admin(args.login_id, args.display_name)
+        return create_admin(args.login_id)
     return 1
 
 

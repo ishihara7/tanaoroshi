@@ -20,7 +20,6 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     login_id: Mapped[str] = mapped_column(String(30), unique=True)  # 英数字のみなのでVARCHARでよい
-    display_name: Mapped[str] = mapped_column(Unicode(50))
     password_hash: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(10), default="user")  # admin | user
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -29,7 +29,7 @@ def make_user():
     def _make(role="user", must_change=False, active=True, password=PW):
         login_id = "t_" + uuid.uuid4().hex[:10]
         with Session(get_engine()) as s:
-            s.add(User(login_id=login_id, display_name="テスト太郎", role=role, is_active=active,
+            s.add(User(login_id=login_id, role=role, is_active=active,
                        password_hash=auth.hash_password(password), must_change_password=must_change))
             s.commit()
         created.append(login_id)
@@ -163,18 +163,27 @@ def test_non_admin_cannot_open_user_admin(client, make_user):
 def test_admin_creates_user_and_issues_temp_password(client, make_user):
     login(client, make_user("admin"))
     new_id = "t_" + uuid.uuid4().hex[:8]
-    r = client.post("/admin/users", data={"login_id": new_id, "display_name": "新人 花子", "role": "user",
-                                           "csrf_token": token(client, "/admin/users")})
+    page = client.get("/admin/users").text
+    assert "表示名" not in page  # 表示名の入力欄は、ない（ログインIDと権限だけ）
+    r = client.post("/admin/users", data={"login_id": new_id, "role": "user", "csrf_token": token(client, "/admin/users")})
     assert r.status_code == 200 and new_id in r.text and "二度と表示されません" in r.text
     temp = re.search(r"<code>([^<]+)</code>", r.text).group(1)
     with Session(get_engine()) as s:
         u = s.scalar(select(User).where(User.login_id == new_id))
-        assert u.must_change_password and u.display_name == "新人 花子"
+        assert u.must_change_password and not hasattr(u, "display_name")
         assert u.password_hash != temp and auth.verify_password(u.password_hash, temp)
     # 同じIDの二重登録、不正なIDは拒否
     t = token(client, "/admin/users")
-    assert client.post("/admin/users", data={"login_id": new_id, "display_name": "x", "csrf_token": t}).status_code == 400
-    assert client.post("/admin/users", data={"login_id": "日本語", "display_name": "x", "csrf_token": t}).status_code == 400
+    assert client.post("/admin/users", data={"login_id": new_id, "csrf_token": t}).status_code == 400
+    assert client.post("/admin/users", data={"login_id": "日本語", "csrf_token": t}).status_code == 400
+
+
+def test_header_and_home_show_the_login_id_not_a_name(client, make_user):
+    uid = make_user("user")
+    login(client, uid)
+    home = client.get("/").text
+    assert uid in home  # 画面上部には、ログインIDを表示する
+    assert "さん" not in home  # 氏名を前提にした挨拶は、ない
 
 
 def test_admin_reset_and_toggle(client, make_user):

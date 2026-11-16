@@ -31,7 +31,6 @@ def users_page(request: Request, admin: User = Depends(auth.require_admin), sess
 def create_user(
     request: Request,
     login_id: str = Form(""),
-    display_name: str = Form(""),
     role: str = Form("user"),
     csrf_token: str = Form(""),
     admin: User = Depends(auth.require_admin),
@@ -40,18 +39,15 @@ def create_user(
     if not auth.check_csrf(request, csrf_token):
         return _render(request, session, admin, error="画面の有効期限が切れました。もう一度お試しください。", status=400)
     login_id = login_id.strip().lower()
-    display_name = display_name.strip()
     if not auth.LOGIN_ID_RE.match(login_id):
         return _render(request, session, admin, error="ログインIDは、英数字・ハイフン・アンダースコアの3〜30文字にしてください。", status=400)
-    if not (1 <= len(display_name) <= 50):
-        return _render(request, session, admin, error="表示名は1〜50文字で入力してください。", status=400)
     if role not in ("admin", "user"):
         return _render(request, session, admin, error="権限の指定が正しくありません。", status=400)
     if session.scalar(select(User.id).where(User.login_id == login_id)):
         return _render(request, session, admin, error="そのログインIDは、すでに使われています。", status=400)
 
     temp = auth.generate_temp_password()
-    session.add(User(login_id=login_id, display_name=display_name, role=role,
+    session.add(User(login_id=login_id, role=role,
                      password_hash=auth.hash_password(temp), must_change_password=True))
     session.commit()
     # 初期パスワードは、この画面にだけ一度表示する（保存しない）

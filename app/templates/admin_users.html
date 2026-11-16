@@ -16,8 +16,6 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <label for="login_id">ログインID（英数字・ハイフン・アンダースコア、3〜30文字）</label>
   <input id="login_id" name="login_id" autocapitalize="none" autocorrect="off" required>
-  <label for="display_name">表示名</label>
-  <input id="display_name" name="display_name" maxlength="50" required>
   <label for="role">権限</label>
   <select id="role" name="role">
     <option value="user">一般</option>
@@ -32,8 +30,7 @@
   <div class="card user">
     <div class="user-head">
       <div class="user-name">
-        <strong>{{ u.display_name }}</strong>
-        <span class="sub-text">{{ u.login_id }}</span>
+        <strong>{{ u.login_id }}</strong>
       </div>
       <div class="badges">
         <span class="badge {{ 'admin' if u.role == 'admin' }}">{{ '管理者' if u.role == 'admin' else '一般' }}</span>

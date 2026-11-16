@@ -56,7 +56,7 @@ def test_detail_shows_history_with_display_name(client, make_user, cleanup):  # 
     page = client.get(f"/assets/{no}").text
     assert "E1234" in page and "約17m" in page and f"/assets/{no}/radar" in page
     history_table = page.split("移動履歴")[1]
-    assert "テスト太郎" not in history_table  # 履歴には、氏名（表示名）を出さない（画面上部の、ログイン中の自分の表示は、別）
+    assert uid not in history_table  # 履歴には、アカウント（ログインID）を出さない。社員番号だけ（画面上部の、ログイン中の自分の表示は、別）
     assert "<th>社員番号</th>" in history_table and "—" in history_table  # 古い記録は、ダッシュで表示
 
 

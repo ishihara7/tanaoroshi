@@ -162,7 +162,7 @@
       </a>
       <form method="post" action="/logout" class="inline who">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <span>{{ user.display_name }}</span>
+        <span>{{ user.login_id }}</span>
         <button class="sub" type="submit">ログアウト</button>
       </form>
     </div>
