@@ -5,14 +5,12 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy.orm import Session
 from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import RedirectRequired
 from app.config import load_settings
 from app.db import Base, get_engine
-from app.routers import account, admin, admin_csv, admin_labels, admin_master, assets, geo_test, tags
-from app.services.seed import seed_categories
+from app.routers import account, admin, admin_assets, admin_csv, admin_labels, assets, geo_test, tags
 
 BASE_DIR = Path(__file__).resolve().parent
 settings = load_settings()
@@ -26,8 +24,6 @@ if not settings.secret_key:
 async def lifespan(_: FastAPI):
     # Phase 1 の途中までは create_all。スキーマが固まったら Alembic のマイグレーションに切り替える
     Base.metadata.create_all(get_engine())
-    with Session(get_engine()) as s:
-        seed_categories(s)
     yield
 
 
@@ -45,7 +41,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 app.include_router(account.router)
 app.include_router(admin.router)
-app.include_router(admin_master.router)
+app.include_router(admin_assets.router)
 app.include_router(tags.router)
 app.include_router(assets.router)
 app.include_router(admin_csv.router)

@@ -6,7 +6,7 @@
 <p class="err">登録されていないか、廃棄された備品のタグです。管理者に確認してください。</p>
 {% else %}
 <h1>{{ asset.name }}</h1>
-<p class="note">{{ category.name if category else '種別なし' }}</p>
+<p class="note">管理番号 {{ asset.asset_no }}</p>
 <meta name="csrf" content="{{ csrf_token(request) }}">
 <div class="issued" id="status" data-token="{{ token }}">所在を記録しています…</div>
 <p class="note" id="detail"></p>

@@ -8,10 +8,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.db import get_engine
-from app.models import Asset, Floor, Scan, User, utcnow
+from app.models import Asset, Scan, User, utcnow
 from tests.test_auth import client, login, make_user  # noqa: F401（フィクスチャを再利用）
-
-FLOOR_BUILDING = "テスト棟_attention"
 
 
 @pytest.fixture()
@@ -20,7 +18,6 @@ def cleanup():
     with Session(get_engine()) as s:
         s.execute(delete(Scan).where(Scan.asset_no.like("9997%")))
         s.execute(delete(Asset).where(Asset.asset_no.like("9997%")))
-        s.execute(delete(Floor).where(Floor.building == FLOOR_BUILDING))
         s.commit()
 
 
@@ -94,14 +91,3 @@ def test_attention_lists(client, make_user, cleanup):  # noqa: F811
     stale_part = page.split("位置の記録がない備品")[0]
     assert old in stale_part and fresh not in stale_part
     assert nopos in page.split("位置の記録がない備品")[1].split("建物の外")[0]
-
-
-def test_attention_outside_building_needs_aligned_floor(client, make_user, cleanup):  # noqa: F811
-    login(client, make_user())
-    inside = add_asset("建物内", last_seen_at=utcnow(), current_lat=36.2930, current_lon=139.3765)
-    outside = add_asset("建物外", last_seen_at=utcnow(), current_lat=36.5000, current_lon=139.5000)
-    with Session(get_engine()) as s:
-        s.add(Floor(building=FLOOR_BUILDING, floor_label="1F", tl_lat=36.2940, tl_lon=139.3750, br_lat=36.2920, br_lon=139.3780))
-        s.commit()
-    part = client.get("/attention").text.split("建物の外にある可能性")[1]
-    assert outside in part and inside not in part

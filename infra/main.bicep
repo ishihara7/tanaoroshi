@@ -14,9 +14,6 @@ param sqlServerName string
 @description('SQL データベースの名前')
 param sqlDatabaseName string = 'tanaoroshi'
 
-@description('ストレージ アカウントの名前（小文字・数字のみ、3〜24文字。全世界で一意）')
-param storageAccountName string
-
 @description('SQL の管理者ログイン')
 param sqlAdminLogin string
 
@@ -31,7 +28,7 @@ param secretKey string
 @description('App Service のリージョン（Japan East で B1 が使えなかったため、現在は Japan West）')
 param appLocation string = 'japanwest'
 
-@description('SQL・ストレージのリージョン')
+@description('SQL のリージョン')
 param dataLocation string = 'japaneast'
 
 @description('開発PCなど、SQL に接続を許可する固定IP（空なら追加しない）')
@@ -44,30 +41,6 @@ resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
   kind: 'linux'
   sku: { name: 'B1', tier: 'Basic' }
   properties: { reserved: true }
-}
-
-// ---------- ストレージ（フロア図。非公開、アプリ経由で配信） ----------
-resource storage 'Microsoft.Storage/storageAccounts@2023-05-01' = {
-  name: storageAccountName
-  location: dataLocation
-  sku: { name: 'Standard_LRS' }
-  kind: 'StorageV2'
-  properties: {
-    allowBlobPublicAccess: false
-    minimumTlsVersion: 'TLS1_2'
-    supportsHttpsTrafficOnly: true
-  }
-}
-
-resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
-  parent: storage
-  name: 'default'
-}
-
-resource floorsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2023-05-01' = {
-  parent: blobService
-  name: 'floors'
-  properties: { publicAccess: 'None' }
 }
 
 // ---------- Azure SQL ----------
@@ -122,9 +95,6 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'DB_NAME', value: sqlDatabaseName }
         { name: 'DB_USER', value: sqlAdminLogin }
         { name: 'DB_PASSWORD', value: sqlAdminPassword }
-        // 暫定：接続文字列（キー）。マネージドIDのロール付与後は、この設定を削除する
-        { name: 'STORAGE_CONNECTION_STRING', value: 'DefaultEndpointsProtocol=https;AccountName=${storage.name};AccountKey=${storage.listKeys().keys[0].value};EndpointSuffix=${environment().suffixes.storage}' }
-        { name: 'STORAGE_CONTAINER', value: floorsContainer.name }
         { name: 'SECRET_KEY', value: secretKey }
       ]
     }

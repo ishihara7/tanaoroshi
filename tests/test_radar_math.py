@@ -1,4 +1,4 @@
-"""レーダーの計算（static/radar_math.js）を Node.js で検証する。Python側の計算とも突き合わせる。"""
+"""レーダーの計算（static/radar_math.js）を Node.js で検証する。"""
 import json
 import shutil
 import subprocess
@@ -6,7 +6,6 @@ from pathlib import Path
 
 import pytest
 
-from app.services.geo import bearing_deg, haversine_m
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="Node.js が必要です")
 JS = Path(__file__).resolve().parent.parent / "app" / "static" / "radar_math.js"
@@ -17,15 +16,6 @@ def run_js(expr: str):
     # Windows の既定の文字コード（cp932）ではなく、Node.js の出力のUTF-8で読む
     out = subprocess.run(["node", "-e", script], capture_output=True, text=True, encoding="utf-8", check=True, timeout=30)
     return json.loads(out.stdout)
-
-
-def test_distance_and_bearing_match_python():
-    pts = [(36.0, 139.0, 36.0, 139.001), (36.29258, 139.37613, 36.29300, 139.37500), (35.0, 139.0, 35.01, 139.0)]
-    for a, b, c, d in pts:
-        js_dist = run_js(f"M.distanceM({a},{b},{c},{d})")
-        js_brg = run_js(f"M.bearingDeg({a},{b},{c},{d})")
-        assert js_dist == pytest.approx(haversine_m(a, b, c, d), rel=1e-9)
-        assert js_brg == pytest.approx(bearing_deg(a, b, c, d), abs=1e-6)
 
 
 def test_known_values():

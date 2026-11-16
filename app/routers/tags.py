@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app import auth
 from app.db import get_session
-from app.models import Asset, Category, Scan, User, utcnow
+from app.models import Asset, Scan, User, utcnow
 from app.templating import templates
 
 router = APIRouter()
@@ -37,9 +37,8 @@ def tag_page(token: str, request: Request, user: User = Depends(auth.current_use
     asset = _find_asset(session, token)
     if asset is None:
         return templates.TemplateResponse(request, "tag.html", {"user": user, "asset": None, "token": token}, status_code=404)
-    category = session.get(Category, asset.category_id) if asset.category_id else None
     return templates.TemplateResponse(
-        request, "tag.html", {"user": user, "asset": asset, "category": category, "token": token}
+        request, "tag.html", {"user": user, "asset": asset, "token": token}
     )
 
 

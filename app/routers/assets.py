@@ -10,9 +10,8 @@ from sqlalchemy.orm import Session
 from app import auth
 from app.config import load_settings
 from app.db import get_session
-from app.models import Asset, Category, Floor, Scan, User, utcnow
+from app.models import Asset, Scan, User, utcnow
 from app.services.assets import get_asset
-from app.services.geo import to_map_position
 from app.templating import jst, templates
 
 router = APIRouter()
@@ -33,9 +32,8 @@ def search_page(request: Request, q: str = "", user: User = Depends(auth.current
     stmt = select(Asset).where(Asset.is_active == True).order_by(Asset.name, Asset.asset_no).limit(SEARCH_LIMIT)  # noqa: E712
     if q:
         stmt = stmt.where((Asset.asset_no.contains(q)) | (Asset.name.contains(q)))
-    cats = {c.id: c.name for c in session.scalars(select(Category))}
     return templates.TemplateResponse(request, "assets_search.html", {
-        "user": user, "q": q, "assets": session.scalars(stmt).all(), "cat_names": cats, "limit": SEARCH_LIMIT})
+        "user": user, "q": q, "assets": session.scalars(stmt).all(), "limit": SEARCH_LIMIT})
 
 
 @router.get("/assets/{asset_no}", response_class=HTMLResponse)
@@ -44,13 +42,12 @@ def detail_page(asset_no: str, request: Request, user: User = Depends(auth.curre
     asset = get_asset(session, asset_no)
     if not _visible(asset, user):
         return RedirectResponse("/assets", status_code=303)
-    category = session.get(Category, asset.category_id) if asset.category_id else None
     rows = session.execute(
         select(Scan, User.display_name).join(User, User.id == Scan.user_id, isouter=True)
         .where(Scan.asset_no == asset.asset_no).order_by(Scan.id.desc()).limit(HISTORY_LIMIT)
     ).all()
     return templates.TemplateResponse(request, "asset_detail.html", {
-        "user": user, "asset": asset, "category": category,
+        "user": user, "asset": asset,
         "history": [(s, name or "（削除済み）") for s, name in rows]})
 
 
@@ -77,16 +74,5 @@ def attention_page(request: Request, user: User = Depends(auth.current_user),
 
     stale = [a for a in active if a.last_seen_at is None or a.last_seen_at < limit]
     no_position = [a for a in active if a.current_lat is None]
-
-    # 建物外の可能性：位置合わせ済みのフロア図が1つ以上あり、どの図の範囲（余白つき）にも入らない位置
-    aligned = [f for f in session.scalars(select(Floor)) if f.is_aligned]
-    outside = []
-    if aligned:
-        for a in active:
-            if a.current_lat is None:
-                continue
-            if not any((p := to_map_position(f, a.current_lat, a.current_lon)) and p.inside for f in aligned):
-                outside.append(a)
     return templates.TemplateResponse(request, "attention.html", {
-        "user": user, "days": days, "stale": stale, "no_position": no_position,
-        "outside": outside, "has_aligned": bool(aligned)})
+        "user": user, "days": days, "stale": stale, "no_position": no_position})

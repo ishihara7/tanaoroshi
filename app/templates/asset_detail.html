@@ -2,7 +2,7 @@
 {% block title %}{{ asset.name }}{% endblock %}
 {% block content %}
 <h1>{{ asset.name }}{% if not asset.is_active %}（廃棄）{% endif %}</h1>
-<p class="note">管理番号 {{ asset.asset_no }} ／ {{ category.name if category else '種別なし' }}</p>
+<p class="note">管理番号 {{ asset.asset_no }}</p>
 {% if asset.note %}<p>{{ asset.note }}</p>{% endif %}
 
 <div class="issued">

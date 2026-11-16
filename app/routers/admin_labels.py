@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from app import auth
 from app.db import get_session
 from app.models import Asset, User
-from app.routers.admin_master import tag_url
+from app.routers.admin_assets import tag_url
 from app.services.assets import get_asset
 from app.services.qr import label_qr, qr_svg_file
 from app.templating import templates

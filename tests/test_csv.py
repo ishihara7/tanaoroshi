@@ -38,12 +38,12 @@ def count(prefix="9996"):
 
 def test_import_utf8_with_bom(admin):
     a, b, c = nos()
-    body = f"管理番号,名称,種別,備考\n{a},ノートPC A,ノートPC,会議室用\n{b},モニター B,モニター,\n{c},名無し種別,,メモ\n".encode("utf-8-sig")
+    body = f"管理番号,名称,備考\n{a},ノートPC A,会議室用\n{b},モニター B,\n{c},備考なし,メモ\n".encode("utf-8-sig")
     r = upload(admin, body)
     assert r.status_code == 200 and "3件を登録しました" in r.text and count() == 3
     with Session(get_engine()) as s:
-        assert s.get(Asset, a).note == "会議室用" and s.get(Asset, a).category_id is not None
-        assert s.get(Asset, c).category_id is None and len(s.get(Asset, c).tag_token) == 12
+        assert s.get(Asset, a).note == "会議室用" and s.get(Asset, b).note == ""
+        assert len(s.get(Asset, c).tag_token) == 12
 
 
 def test_import_shift_jis(admin):
@@ -65,7 +65,7 @@ def test_import_skips_duplicates_and_is_rerunnable(admin):
 
 def test_import_rolls_back_everything_on_any_error(admin):
     a, b, _ = nos()
-    body = f"管理番号,名称,種別\n{a},正常な行,\nAB-12,ハイフン入りの行,\n{b},種別違い,存在しない種別\n".encode("utf-8")
+    body = f"管理番号,名称\n{a},正常な行\nAB-12,ハイフン入りの行\n{b},名称が長すぎる行{'あ' * 100}\n".encode("utf-8")
     r = upload(admin, body)
     assert r.status_code == 400 and "1件も登録していません" in r.text
     assert "3行目" in r.text and "先頭の0が消えていないか" in r.text and "4行目" in r.text
@@ -85,6 +85,15 @@ def test_import_alphanumeric_and_case_insensitive_duplicates(admin):
     assert too_long.status_code == 400 and "1〜20文字" in too_long.text
 
 
+def test_import_ignores_the_old_category_column(admin):
+    """種別の列が付いた古いCSVも取り込める（種別は使わず、無視した列として表示する）。"""
+    (a,) = nos(1)
+    r = upload(admin, f"管理番号,名称,種別,備考\n{a},古い形式のCSV,ノートPC,メモ\n".encode())
+    assert "1件を登録しました" in r.text and "次の列は、使いません" in r.text and "種別" in r.text
+    with Session(get_engine()) as s:
+        assert s.get(Asset, a).note == "メモ"
+
+
 def test_import_rejects_missing_header_and_empty(admin):
     assert upload(admin, "名称\nだけ\n".encode()).status_code == 400
     assert upload(admin, b"").status_code in (400, 422)
@@ -96,9 +105,9 @@ def test_export_assets_is_excel_friendly_and_safe(admin):
     r = admin.get("/admin/export/assets.csv")
     assert r.status_code == 200 and r.content.startswith(b"\xef\xbb\xbf")  # BOM付きUTF-8
     rows = list(csv.reader(io.StringIO(r.content.decode("utf-8-sig"))))
-    assert rows[0][:4] == ["管理番号", "名称", "種別", "備考"] and rows[0][-1] == "タグURL"
+    assert rows[0][:3] == ["管理番号", "名称", "備考"] and "種別" not in rows[0] and rows[0][-1] == "タグURL"
     row = next(x for x in rows if x[0] == a)
-    assert row[1] == "'=SUM(1+1)" and row[3] == "'+cmd"  # 数式として実行されない
+    assert row[1] == "'=SUM(1+1)" and row[2] == "'+cmd"  # 数式として実行されない
     assert "/i/" in row[-1] and a not in row[-1]  # タグURLに管理番号は含まれない
 
 

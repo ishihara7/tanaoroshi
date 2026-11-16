@@ -10,13 +10,6 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <label for="name">名称</label>
   <input id="name" name="name" maxlength="100" value="{{ asset.name }}" required>
-  <label for="category_id">種別</label>
-  <select id="category_id" name="category_id">
-    <option value="">（未選択）</option>
-    {% for c in categories if c.is_active or c.id == asset.category_id %}
-    <option value="{{ c.id }}" {% if c.id == asset.category_id %}selected{% endif %}>{{ c.name }}</option>
-    {% endfor %}
-  </select>
   <label for="note">備考</label>
   <input id="note" name="note" maxlength="500" value="{{ asset.note }}">
   <p><button type="submit">保存</button> <a href="/admin/assets">一覧へ</a></p>

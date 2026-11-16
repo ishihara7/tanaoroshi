@@ -15,11 +15,6 @@
   <input id="asset_no" name="asset_no" pattern="[A-Za-z0-9]{1,20}" maxlength="20" autocapitalize="none" autocorrect="off" required>
   <label for="name">名称</label>
   <input id="name" name="name" maxlength="100" required>
-  <label for="category_id">種別</label>
-  <select id="category_id" name="category_id">
-    <option value="">（未選択）</option>
-    {% for c in categories if c.is_active %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
-  </select>
   <label for="note">備考</label>
   <input id="note" name="note" maxlength="500">
   <p><button type="submit">登録</button></p>
@@ -33,16 +28,15 @@
 </form>
 
 <table>
-  <tr><th>管理番号</th><th>名称</th><th>種別</th><th></th></tr>
+  <tr><th>管理番号</th><th>名称</th><th></th></tr>
   {% for a in assets %}
   <tr>
     <td>{{ a.asset_no }}</td>
     <td>{{ a.name }}{% if not a.is_active %}（廃棄）{% endif %}</td>
-    <td>{{ cat_names.get(a.category_id, '') }}</td>
     <td><a href="/admin/assets/{{ a.asset_no }}">編集</a></td>
   </tr>
   {% else %}
-  <tr><td colspan="4" class="note">該当する備品はありません。</td></tr>
+  <tr><td colspan="3" class="note">該当する備品はありません。</td></tr>
   {% endfor %}
 </table>
 {% endblock %}

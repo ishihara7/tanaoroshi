@@ -13,6 +13,7 @@
   {% endif %}
   {% if result.skipped %}<p class="note">すでに登録済み（または、ファイル内で重複）のため、飛ばした行：{{ result.skipped|length }}件
     （{% for row, no in result.skipped[:20] %}{{ row }}行目 {{ no }}{% if not loop.last %}、{% endif %}{% endfor %}{% if result.skipped|length > 20 %} ほか{% endif %}）</p>{% endif %}
+  {% if result.ignored %}<p class="note">次の列は、使いません（無視しました）：{{ result.ignored|join('、') }}</p>{% endif %}
   {% if result.errors %}
   <ul>{% for row, msg in result.errors[:50] %}<li>{{ row }}行目：{{ msg }}</li>{% endfor %}</ul>
   {% if result.errors|length > 50 %}<p class="note">ほか{{ result.errors|length - 50 }}件</p>{% endif %}
@@ -25,7 +26,6 @@
   <tr><th>見出し</th><th>内容</th></tr>
   <tr><td>管理番号（必須）</td><td>半角英数字、20文字まで（大文字・小文字は区別しません）</td></tr>
   <tr><td>名称（必須）</td><td>100文字まで</td></tr>
-  <tr><td>種別</td><td>登録済みの種別名（空でも可）</td></tr>
   <tr><td>備考</td><td>500文字まで</td></tr>
 </table>
 <p class="note">Excelで、管理番号の先頭の0が消えるときは、列の書式を「文字列」にしてから入力してください。1件でも誤りがあると、何も登録されません。登録済みの管理番号は、飛ばされます。</p>
