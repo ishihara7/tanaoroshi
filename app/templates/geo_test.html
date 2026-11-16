@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>位置情報テスト</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 16px; max-width: 640px; }
+    h1 { font-size: 1.2rem; }
+    button { font-size: 1rem; padding: 12px 16px; width: 100%; }
+    .box { border: 1px solid #ccc; border-radius: 8px; padding: 12px; margin: 12px 0; }
+    table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+    th, td { border-bottom: 1px solid #ddd; padding: 4px 6px; text-align: left; }
+    .err { color: #b00020; }
+  </style>
+</head>
+<body>
+  <h1>位置情報テスト</h1>
+  <p>場所のメモ（例：3F会議室A前）を入れて、測定します。</p>
+  <input id="label" value="{{ label }}" placeholder="場所のメモ" style="width:100%;font-size:1rem;padding:8px;box-sizing:border-box">
+  <p><button id="go">位置情報を取得して保存</button></p>
+  <div class="box" id="result">まだ測定していません。</div>
+
+  <h2 style="font-size:1rem">直近30件</h2>
+  <table>
+    <tr><th>時刻(UTC)</th><th>メモ</th><th>緯度</th><th>経度</th><th>誤差m</th><th>高度</th></tr>
+    {% for r in rows %}
+    <tr>
+      <td>{{ r.created_at.strftime('%m-%d %H:%M') }}</td>
+      <td>{{ r.label }}</td>
+      <td>{{ '%.6f'|format(r.latitude) if r.latitude is not none else '-' }}</td>
+      <td>{{ '%.6f'|format(r.longitude) if r.longitude is not none else '-' }}</td>
+      <td>{{ '%.0f'|format(r.accuracy_m) if r.accuracy_m is not none else (r.error_message or '-') }}</td>
+      <td>{{ '%.0f'|format(r.altitude) if r.altitude is not none else '-' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <script src="/static/geo.js"></script>
+</body>
+</html>
