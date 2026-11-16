@@ -18,12 +18,12 @@ az bicep build --file infra/main.bicep --stdout > $null
    ```powershell
    az deployment group what-if -g <リソースグループ名> -f infra/main.bicep `
      -p webAppName=<10文字以内> sqlServerName=<一意の名前> `
-        sqlAdminLogin=<管理者名> sqlAdminPassword=<強いパスワード> secretKey=<長いランダム文字列>
+        sqlAdminLogin=<管理者名> sqlAdminPassword=<強いパスワード> secretKey=<長いランダム文字列> coordEncryptionKey=<座標の暗号化の鍵（43文字）>
    ```
 3. 問題なければ、`what-if` を `create` に変えて実行する（課金が発生する）。
 4. アプリのコードは、別にデプロイする（[運用手順書](../docs/運用手順書.md)の「デプロイ」）。
 
 ## 注意点
-- **パスワードと `secretKey` は、ファイルやコマンド履歴に残さない**（パラメータの対話入力、または Key Vault を使う）。
+- **パスワード、`secretKey`、`coordEncryptionKey` は、ファイルやコマンド履歴に残さない**。`coordEncryptionKey` は、失うと座標が読めなくなるため、別の場所にも控える（パラメータの対話入力、または Key Vault を使う）。
 - Web App の名前は、タグのURLの一部になる。**タグを書き込んだ後は、変更できない**。
 - SQL のファイアウォールは、現在は「Azure サービスを許可」。本番化までに、Web App の送信元IPだけに絞る。

@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from sqlalchemy import Boolean, DateTime, Float, Integer, String, Unicode
 from sqlalchemy.orm import Mapped, mapped_column
 
+from app.crypto import EncryptedFloat
 from app.db import Base
 
 
@@ -40,8 +41,8 @@ class Asset(Base):
     note: Mapped[str] = mapped_column(Unicode(500), default="")
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # 廃棄したら False（台帳から非表示）
     # 最新の所在（記録時に更新する）
-    current_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
-    current_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_lat: Mapped[float | None] = mapped_column(EncryptedFloat("assets.current_lat"), nullable=True)
+    current_lon: Mapped[float | None] = mapped_column(EncryptedFloat("assets.current_lon"), nullable=True)
     current_accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
@@ -57,8 +58,8 @@ class Scan(Base):
     asset_no: Mapped[str] = mapped_column(String(20), index=True)
     user_id: Mapped[int] = mapped_column(Integer, index=True)
     employee_no: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)  # 記録した人の社員番号（旧データは空）
-    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latitude: Mapped[float | None] = mapped_column(EncryptedFloat("scans.latitude"), nullable=True)
+    longitude: Mapped[float | None] = mapped_column(EncryptedFloat("scans.longitude"), nullable=True)
     accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     error_message: Mapped[str] = mapped_column(Unicode(200), default="")
@@ -75,8 +76,8 @@ class GeoTest(Base):
     # 日本語を保存するため、文字列は Unicode（SQL Server では NVARCHAR）にする。
     # String は VARCHAR になり、日本語が「?」に化ける。
     label: Mapped[str] = mapped_column(Unicode(100), default="")
-    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
-    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    latitude: Mapped[float | None] = mapped_column(EncryptedFloat("geo_tests.latitude"), nullable=True)
+    longitude: Mapped[float | None] = mapped_column(EncryptedFloat("geo_tests.longitude"), nullable=True)
     accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
     altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
     error_message: Mapped[str] = mapped_column(Unicode(200), default="")

@@ -25,6 +25,10 @@ param sqlAdminPassword string
 @description('セッション署名用の長いランダム文字列（リポジトリに書かない）')
 param secretKey string
 
+@secure()
+@description('座標の暗号化の鍵（43文字、base64url）。リポジトリに書かない。失うと座標が読めなくなるため、別の場所にも控える')
+param coordEncryptionKey string
+
 @description('App Service のリージョン（Japan East で B1 が使えなかったため、現在は Japan West）')
 param appLocation string = 'japanwest'
 
@@ -96,6 +100,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = {
         { name: 'DB_USER', value: sqlAdminLogin }
         { name: 'DB_PASSWORD', value: sqlAdminPassword }
         { name: 'SECRET_KEY', value: secretKey }
+        { name: 'COORD_ENCRYPTION_KEY', value: coordEncryptionKey }
       ]
     }
   }

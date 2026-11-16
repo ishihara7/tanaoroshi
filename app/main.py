@@ -9,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.auth import RedirectRequired
 from app.config import load_settings
+from app.crypto import ensure_key
 from app.db import Base, get_engine
 from app.routers import account, admin, admin_assets, admin_csv, admin_labels, assets, geo_test, tags
 
@@ -18,6 +19,8 @@ settings = load_settings()
 if not settings.secret_key:
     # 秘密鍵なしではセッションの署名が意味をなさないため、起動させない
     raise RuntimeError("SECRET_KEY が設定されていません。.env またはアプリ設定に長いランダム文字列を設定してください。")
+
+ensure_key()  # 座標の暗号化の鍵が、正しく設定されていなければ、起動させない
 
 
 @asynccontextmanager

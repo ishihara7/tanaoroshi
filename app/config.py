@@ -18,6 +18,7 @@ class Settings:
     cookie_secure: bool
     session_days: int
     attention_days: int
+    coord_key: str
 
 
 def load_settings() -> Settings:
@@ -32,4 +33,5 @@ def load_settings() -> Settings:
         cookie_secure=os.environ.get("COOKIE_SECURE", "true").lower() != "false",
         session_days=int(os.environ.get("SESSION_DAYS", "30")),
         attention_days=int(os.environ.get("ATTENTION_DAYS", "90")),
+        coord_key=os.environ.get("COORD_ENCRYPTION_KEY", ""),
     )
