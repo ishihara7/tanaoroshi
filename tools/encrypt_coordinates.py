@@ -1,6 +1,6 @@
 r"""既存のDBに、数値のまま保存されている座標を、暗号化する（一度だけ実行する移行ツール）。
 
-対象：assets（current_lat／current_lon）、scans（latitude／longitude）、geo_tests（latitude／longitude）。
+対象：assets（current_lat／current_lon）、scans（latitude／longitude）。
 やること：暗号文用の列を追加 → 全行を暗号化 → 復号して元の値と一致することを確認 → 元の列を削除 → 列名を元に戻す。
 テーブルごとに、1つの取引で行う。途中で失敗したら、そのテーブルは、元に戻る。何度実行しても安全（暗号化済みの列は、飛ばす）。
 
@@ -28,7 +28,6 @@ from app.db import build_odbc_string  # noqa: E402
 TARGETS = [
     ("assets", "asset_no", [("current_lat", "assets.current_lat"), ("current_lon", "assets.current_lon")]),
     ("scans", "id", [("latitude", "scans.latitude"), ("longitude", "scans.longitude")]),
-    ("geo_tests", "id", [("latitude", "geo_tests.latitude"), ("longitude", "geo_tests.longitude")]),
 ]
 
 

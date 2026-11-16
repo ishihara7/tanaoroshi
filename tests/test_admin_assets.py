@@ -111,6 +111,13 @@ def test_asset_pages_are_admin_only(client, make_user):  # noqa: F811
     assert r.status_code == 303 and r.headers["location"] == "/"
 
 
+def test_geo_test_page_is_removed(client):  # noqa: F811
+    """位置情報テスト（ログインなしで、座標が見えるページ）は、なくなっている。"""
+    for path in ["/test/geo", "/test/geo?id=x", "/static/geo.js"]:
+        assert client.get(path, follow_redirects=False).status_code == 404, path
+    assert client.post("/test/geo", json={"latitude": 35.0, "longitude": 139.0}).status_code in (404, 405)
+
+
 def test_floor_plans_and_categories_are_removed(admin_client):
     """フロア図と種別の機能は、なくなっている（ページも、画面の項目も、ナビゲーションも）。"""
     for path in ["/admin/floors", "/admin/categories", "/floors/1/image"]:

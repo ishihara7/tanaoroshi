@@ -11,7 +11,7 @@ from app.auth import RedirectRequired
 from app.config import load_settings
 from app.crypto import ensure_key
 from app.db import Base, get_engine
-from app.routers import account, admin, admin_assets, admin_csv, admin_labels, assets, geo_test, tags
+from app.routers import account, admin, admin_assets, admin_csv, admin_labels, assets, tags
 
 BASE_DIR = Path(__file__).resolve().parent
 settings = load_settings()
@@ -49,7 +49,6 @@ app.include_router(tags.router)
 app.include_router(assets.router)
 app.include_router(admin_csv.router)
 app.include_router(admin_labels.router)
-app.include_router(geo_test.router)
 
 
 @app.exception_handler(RedirectRequired)
