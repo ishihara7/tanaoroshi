@@ -1,8 +1,15 @@
 {% extends "base.html" %}
 {% block content %}
-<h1>備品所在管理</h1>
-<p>{{ user.display_name }} さん、こんにちは。</p>
-<p><a href="/assets"><button type="button">備品を探す・検索する</button></a></p>
-<p><a href="/attention"><button type="button" class="sub">要確認リスト</button></a></p>
-<p class="note">備品のNFCタグにiPhoneをかざすと、その場所が記録されます。</p>
+<h1>こんにちは、{{ user.display_name }} さん</h1>
+<p class="note">備品のタグ（NFC・QR）を読み取ると、その場所が記録されます。</p>
+<div class="actions">
+  <a class="action" href="/assets">
+    <span class="ico"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></span>
+    <span><strong>備品を探す</strong><span>名称・管理番号で検索。レーダーで方向を確認</span></span>
+  </a>
+  <a class="action" href="/attention">
+    <span class="ico"><svg viewBox="0 0 24 24"><path d="M12 3l9.5 16.5h-19z"/><path d="M12 10v4"/><path d="M12 17.2h.01"/></svg></span>
+    <span><strong>要確認リスト</strong><span>しばらく確認されていない備品</span></span>
+  </a>
+</div>
 {% endblock %}

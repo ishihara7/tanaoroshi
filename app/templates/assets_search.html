@@ -4,19 +4,21 @@
 <h1>備品検索</h1>
 <form method="get" action="/assets">
   <label for="q">管理番号・名称</label>
-  <input id="q" name="q" value="{{ q }}" autofocus>
-  <p><button type="submit">検索</button></p>
+  <input id="q" name="q" value="{{ q }}" placeholder="例：B0003653、Dell" autofocus>
+  <p style="margin-bottom:0"><button type="submit">検索</button></p>
 </form>
-<table>
-  <tr><th>名称</th><th>最後の確認</th></tr>
+<div class="list">
   {% for a in assets %}
-  <tr>
-    <td><a href="/assets/{{ a.asset_no }}">{{ a.name }}</a><br><span class="note">{{ a.asset_no }}</span></td>
-    <td>{{ a.last_seen_at|jst('%m/%d %H:%M') if a.last_seen_at else '記録なし' }}</td>
-  </tr>
+  <a class="item" href="/assets/{{ a.asset_no }}">
+    <span class="main">
+      <span class="title">{{ a.name }}</span><br>
+      <span class="sub-text">{{ a.asset_no }} ／ 最後の確認：{{ a.last_seen_at|jst('%m/%d %H:%M') if a.last_seen_at else '記録なし' }}</span>
+    </span>
+    <span class="chev">›</span>
+  </a>
   {% else %}
-  <tr><td colspan="2" class="note">該当する備品はありません。</td></tr>
+  <p class="note">該当する備品はありません。</p>
   {% endfor %}
-</table>
+</div>
 {% if assets|length >= limit %}<p class="note">{{ limit }}件まで表示しています。条件を絞ってください。</p>{% endif %}
 {% endblock %}

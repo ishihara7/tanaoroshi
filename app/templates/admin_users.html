@@ -27,18 +27,24 @@
 </form>
 
 <h2 style="font-size:1rem">ユーザー一覧</h2>
-<table>
-  <tr><th>ID</th><th>表示名</th><th>権限</th><th>状態</th><th></th></tr>
+<div class="list">
   {% for u in users %}
-  <tr>
-    <td>{{ u.login_id }}</td>
-    <td>{{ u.display_name }}</td>
-    <td>{{ '管理者' if u.role == 'admin' else '一般' }}</td>
-    <td>{{ '有効' if u.is_active else '無効' }}{% if u.must_change_password %}（初期PW）{% endif %}</td>
-    <td>
+  <div class="card user">
+    <div class="user-head">
+      <div class="user-name">
+        <strong>{{ u.display_name }}</strong>
+        <span class="sub-text">{{ u.login_id }}</span>
+      </div>
+      <div class="badges">
+        <span class="badge {{ 'admin' if u.role == 'admin' }}">{{ '管理者' if u.role == 'admin' else '一般' }}</span>
+        <span class="badge {{ 'ok' if u.is_active else 'off' }}">{{ '有効' if u.is_active else '無効' }}</span>
+        {% if u.must_change_password %}<span class="badge warn">初期パスワード</span>{% endif %}
+      </div>
+    </div>
+    <div class="user-actions">
       <form class="inline" method="post" action="/admin/users/{{ u.id }}/reset">
         <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
-        <button class="sub" type="submit">PW初期化</button>
+        <button class="sub" type="submit">パスワードを初期化</button>
       </form>
       {% if u.id != user.id %}
       <form class="inline" method="post" action="/admin/users/{{ u.id }}/toggle">
@@ -46,8 +52,8 @@
         <button class="sub" type="submit">{{ '無効にする' if u.is_active else '有効にする' }}</button>
       </form>
       {% endif %}
-    </td>
-  </tr>
+    </div>
+  </div>
   {% endfor %}
-</table>
+</div>
 {% endblock %}

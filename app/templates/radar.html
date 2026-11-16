@@ -3,13 +3,15 @@
 {% block content %}
 <h1>{{ asset.name }}</h1>
 <p class="note">管理番号 {{ asset.asset_no }} ／ 最後の確認：{{ asset.last_seen_at|jst if asset.last_seen_at else '記録なし' }}</p>
-<p style="text-align:center"><canvas id="radar" aria-label="備品の方向を示すレーダー"></canvas></p>
-<p id="msg" style="font-size:1.2rem;font-weight:bold;text-align:center">準備しています…</p>
-<p id="sub" class="note" style="text-align:center"></p>
-<p style="text-align:center"><button id="compass-btn" type="button" class="sub" style="display:none">コンパスを使う（スマホの向きに合わせる）</button></p>
-<details style="margin:12px 0">
+<div class="card" style="text-align:center">
+  <canvas id="radar" aria-label="備品の方向を示すレーダー"></canvas>
+  <p id="msg" style="font-size:1.2rem;font-weight:800;margin:10px 0 4px">準備しています…</p>
+  <p id="sub" class="note" style="margin:0 0 12px"></p>
+  <button id="compass-btn" type="button" class="sub" style="display:none">コンパスを使う（スマホの向きに合わせる）</button>
+</div>
+<details class="card">
   <summary class="note">詳細（数値）</summary>
-  <pre id="debug" class="note" style="white-space:pre-wrap">取得中…</pre>
+  <pre id="debug" class="note" style="white-space:pre-wrap;margin-top:8px">取得中…</pre>
 </details>
 <p class="note">この画面を開いている間だけ、スマホの位置を取得します。位置は、この端末の中で計算するだけで、サーバーには送らず、保存もしません。</p>
 <p><a href="/assets/{{ asset.asset_no }}">備品の詳細へ戻る</a></p>

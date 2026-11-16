@@ -8,7 +8,14 @@
 <h1>{{ asset.name }}</h1>
 <p class="note">管理番号 {{ asset.asset_no }}</p>
 <meta name="csrf" content="{{ csrf_token(request) }}">
-<div class="issued" id="status" data-token="{{ token }}">所在を記録しています…</div>
+<div class="status is-busy" id="status" data-token="{{ token }}" role="status" aria-live="polite">
+  <span class="icon">
+    <span class="spin"></span>
+    <svg class="i-ok" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>
+    <svg class="i-err" viewBox="0 0 24 24"><path d="M12 6v7"/><path d="M12 17.5h.01"/></svg>
+  </span>
+  <span id="status-text">所在を記録しています…</span>
+</div>
 <p class="note" id="detail"></p>
 <p><button id="record-btn" type="button" class="sub">今の場所で記録し直す</button></p>
 <p><a href="/assets/{{ asset.asset_no }}">備品の詳細（移動履歴）</a> ／ <a href="/">ホームへ</a></p>
