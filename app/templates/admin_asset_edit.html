@@ -23,7 +23,8 @@
 </form>
 
 <h2 style="font-size:1rem;margin-top:24px">NFCタグに書き込むURL</h2>
-<p><code style="word-break:break-all">{{ url }}</code></p>
+<p><code id="tag-url" style="word-break:break-all">{{ url }}</code></p>
+<p><button type="button" data-copy-target="tag-url">URLをコピー</button></p>
 <p class="note">このURLをタグに書き込みます（管理番号そのものはURLに含まれません）。再発行すると、これまでに書き込んだタグは使えなくなります。</p>
 <form class="inline" method="post" action="/admin/assets/{{ asset.asset_no }}/reissue"
       onsubmit="return confirm('URLを再発行します。書き込み済みのタグは使えなくなります。よろしいですか？')">
@@ -37,4 +38,5 @@
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
   <button class="sub" type="submit">{{ '廃棄を取り消す' if not asset.is_active else '廃棄する' }}</button>
 </form>
+<script src="/static/copy.js"></script>
 {% endblock %}

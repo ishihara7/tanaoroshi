@@ -152,6 +152,9 @@ def test_asset_create_keeps_leading_zeros_and_issues_token(admin_client):
         assert no not in a.tag_token
     page = admin_client.get(f"/admin/assets/{no}").text
     url = re.search(r"<code[^>]*>(https?://[^<]+)</code>", page).group(1)
+    # URLのコピーボタン（コピー対象は、URLを表示している要素）
+    assert 'id="tag-url"' in page and 'data-copy-target="tag-url"' in page and "/static/copy.js" in page
+    assert admin_client.get("/static/copy.js").status_code == 200
     assert url.endswith("/i/" + a.tag_token) and no not in url  # URLに管理番号は含まれない
 
 
