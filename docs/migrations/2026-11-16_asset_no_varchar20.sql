@@ -10,7 +10,8 @@ CREATE INDEX ix_scans_asset_no ON scans (asset_no);
 
 -- assets：主キー制約の名前は自動生成のため、調べてから外す
 DECLARE @pk sysname = (SELECT name FROM sys.key_constraints WHERE parent_object_id = OBJECT_ID('assets') AND type = 'PK');
-EXEC('ALTER TABLE assets DROP CONSTRAINT ' + QUOTENAME(@pk));
+DECLARE @drop nvarchar(400) = N'ALTER TABLE assets DROP CONSTRAINT ' + QUOTENAME(@pk);
+EXEC sp_executesql @drop;
 ALTER TABLE assets ALTER COLUMN asset_no VARCHAR(20) NOT NULL;
 ALTER TABLE assets ADD CONSTRAINT PK_assets PRIMARY KEY (asset_no);
 
