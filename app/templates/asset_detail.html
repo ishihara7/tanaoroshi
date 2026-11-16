@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}{{ asset.name }}{% endblock %}
+{% block content %}
+<h1>{{ asset.name }}{% if not asset.is_active %}（廃棄）{% endif %}</h1>
+<p class="note">管理番号 {{ asset.asset_no }} ／ {{ category.name if category else '種別なし' }}</p>
+{% if asset.note %}<p>{{ asset.note }}</p>{% endif %}
+
+<div class="issued">
+  <p style="margin:0 0 8px"><strong>最後の確認</strong>：{{ asset.last_seen_at|jst if asset.last_seen_at else '記録なし' }}</p>
+  {% if asset.current_lat is not none %}
+  <p style="margin:0 0 8px">最後の位置の誤差：約{{ '%.0f'|format(asset.current_accuracy_m or 0) }}m（おおよその位置です）</p>
+  <p style="margin:0">
+    {% if asset.is_active %}<a href="/assets/{{ asset.asset_no }}/radar"><button type="button">この備品を探す（レーダー）</button></a>{% endif %}
+    <a href="https://www.google.com/maps?q={{ asset.current_lat }},{{ asset.current_lon }}" target="_blank" rel="noopener noreferrer">地図で開く</a>
+  </p>
+  {% else %}
+  <p style="margin:0">位置の記録がありません。備品タグにタッチすると記録されます。</p>
+  {% endif %}
+</div>
+
+<h2 style="font-size:1rem">移動履歴（新しい順、最大50件）</h2>
+<table>
+  <tr><th>日時</th><th>記録者</th><th>位置の誤差</th></tr>
+  {% for s, name in history %}
+  <tr>
+    <td>{{ s.created_at|jst('%m/%d %H:%M') }}</td>
+    <td>{{ name }}</td>
+    <td>{% if s.latitude is not none %}約{{ '%.0f'|format(s.accuracy_m or 0) }}m{% else %}<span class="note">位置なし</span>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" class="note">履歴はありません。</td></tr>
+  {% endfor %}
+</table>
+<p><a href="/assets">検索へ戻る</a></p>
+{% endblock %}

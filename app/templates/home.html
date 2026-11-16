@@ -2,5 +2,7 @@
 {% block content %}
 <h1>備品所在管理</h1>
 <p>{{ user.display_name }} さん、こんにちは。</p>
-<p class="note">備品タグにタッチすると、所在が記録されます。画面は順次追加します。</p>
+<p><a href="/assets"><button type="button">備品を探す・検索する</button></a></p>
+<p><a href="/attention"><button type="button" class="sub">要確認リスト</button></a></p>
+<p class="note">備品のNFCタグにiPhoneをかざすと、その場所が記録されます。</p>
 {% endblock %}

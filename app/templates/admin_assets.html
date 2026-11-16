@@ -2,6 +2,11 @@
 {% block title %}備品{% endblock %}
 {% block content %}
 <h1>備品</h1>
+<p>
+  <a href="/admin/assets-import">CSV取込</a> ／
+  <a href="/admin/export/assets.csv">台帳をCSV出力</a> ／
+  <a href="/admin/export/scans.csv">位置履歴をCSV出力</a>
+</p>
 {% if error %}<p class="err">{{ error }}</p>{% endif %}
 <form method="post" action="/admin/assets">
   <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">

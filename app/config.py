@@ -19,6 +19,7 @@ class Settings:
     secret_key: str
     cookie_secure: bool
     session_days: int
+    attention_days: int
 
 
 def load_settings() -> Settings:
@@ -34,4 +35,5 @@ def load_settings() -> Settings:
         # 未設定のときは安全側（Secure あり）
         cookie_secure=os.environ.get("COOKIE_SECURE", "true").lower() != "false",
         session_days=int(os.environ.get("SESSION_DAYS", "30")),
+        attention_days=int(os.environ.get("ATTENTION_DAYS", "90")),
     )

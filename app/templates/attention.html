@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}要確認リスト{% endblock %}
+{% macro list(items) %}
+<table>
+  <tr><th>名称</th><th>最後の確認</th></tr>
+  {% for a in items %}
+  <tr>
+    <td><a href="/assets/{{ a.asset_no }}">{{ a.name }}</a><br><span class="note">{{ a.asset_no }}</span></td>
+    <td>{{ a.last_seen_at|jst('%Y/%m/%d') if a.last_seen_at else '記録なし' }}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="2" class="note">該当する備品はありません。</td></tr>
+  {% endfor %}
+</table>
+{% endmacro %}
+{% block content %}
+<h1>要確認リスト</h1>
+
+<h2 style="font-size:1rem">{{ days }}日以上、確認されていない備品（{{ stale|length }}件）</h2>
+{{ list(stale) }}
+
+<h2 style="font-size:1rem;margin-top:24px">位置の記録がない備品（{{ no_position|length }}件）</h2>
+{{ list(no_position) }}
+
+<h2 style="font-size:1rem;margin-top:24px">建物の外にある可能性（{{ outside|length }}件）</h2>
+{% if has_aligned %}
+<p class="note">最後に記録された位置が、登録されたフロア図の範囲から外れている備品です。位置の誤差もあるため、あくまで目安です。</p>
+{{ list(outside) }}
+{% else %}
+<p class="note">フロア図の位置合わせが未登録のため、この判定は行っていません（管理者がフロア図の位置合わせを登録すると有効になります）。</p>
+{% endif %}
+{% endblock %}
