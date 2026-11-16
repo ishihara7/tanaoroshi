@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}備品{% endblock %}
+{% block content %}
+<h1>備品</h1>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/assets">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label for="asset_no">管理番号（半角数字10桁）</label>
+  <input id="asset_no" name="asset_no" inputmode="numeric" pattern="[0-9]{10}" maxlength="10" required>
+  <label for="name">名称</label>
+  <input id="name" name="name" maxlength="100" required>
+  <label for="category_id">種別</label>
+  <select id="category_id" name="category_id">
+    <option value="">（未選択）</option>
+    {% for c in categories if c.is_active %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+  </select>
+  <label for="note">備考</label>
+  <input id="note" name="note" maxlength="500">
+  <p><button type="submit">登録</button></p>
+</form>
+
+<form method="get" action="/admin/assets">
+  <label for="q">検索（管理番号・名称）</label>
+  <input id="q" name="q" value="{{ q }}">
+  <p><label style="display:inline"><input type="checkbox" name="all" value="1" style="width:auto" {% if show_all %}checked{% endif %}> 廃棄済みも表示</label>
+  <button class="sub" type="submit">検索</button></p>
+</form>
+
+<table>
+  <tr><th>管理番号</th><th>名称</th><th>種別</th><th></th></tr>
+  {% for a in assets %}
+  <tr>
+    <td>{{ a.asset_no }}</td>
+    <td>{{ a.name }}{% if not a.is_active %}（廃棄）{% endif %}</td>
+    <td>{{ cat_names.get(a.category_id, '') }}</td>
+    <td><a href="/admin/assets/{{ a.asset_no }}">編集</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="note">該当する備品はありません。</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

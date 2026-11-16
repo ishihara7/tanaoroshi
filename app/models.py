@@ -29,6 +29,62 @@ class User(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
 
 
+class Category(Base):
+    """備品の種別（ノートPC・モニター・LANハブ・その他。管理者が追加・編集できる）。"""
+
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(Unicode(50), unique=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Floor(Base):
+    """フロア図。北が上の画像の左上・右下の緯度経度で、GPS座標と図上の位置を対応づける。"""
+
+    __tablename__ = "floors"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    building: Mapped[str] = mapped_column(Unicode(50))
+    floor_label: Mapped[str] = mapped_column(Unicode(20))  # 例：2F
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    image_path: Mapped[str] = mapped_column(String(200), default="")
+    image_width: Mapped[int] = mapped_column(Integer, default=0)
+    image_height: Mapped[int] = mapped_column(Integer, default=0)
+    # 位置合わせ（未登録は None）
+    tl_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tl_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    br_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    br_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+    @property
+    def is_aligned(self) -> bool:
+        return None not in (self.tl_lat, self.tl_lon, self.br_lat, self.br_lon)
+
+
+class Asset(Base):
+    """備品。管理番号は既存の資産番号（10桁の文字列）。タグのURLには、管理番号ではなく tag_token を使う。"""
+
+    __tablename__ = "assets"
+
+    asset_no: Mapped[str] = mapped_column(String(10), primary_key=True)
+    name: Mapped[str] = mapped_column(Unicode(100))
+    category_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tag_token: Mapped[str] = mapped_column(String(20), unique=True)
+    note: Mapped[str] = mapped_column(Unicode(500), default="")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)  # 廃棄したら False（台帳から非表示）
+    # 最新の所在（記録時に更新する）
+    current_floor_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    current_lat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_lon: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
 class GeoTest(Base):
     """位置情報テストの記録。社内各フロアでの誤差を測るために使う。"""
 

@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}備品の編集{% endblock %}
+{% block content %}
+<h1>{{ asset.name }}{% if not asset.is_active %}（廃棄）{% endif %}</h1>
+<p class="note">管理番号：{{ asset.asset_no }}</p>
+{% if saved %}<p style="color:var(--ok)">保存しました。</p>{% endif %}
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+<form method="post" action="/admin/assets/{{ asset.asset_no }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label for="name">名称</label>
+  <input id="name" name="name" maxlength="100" value="{{ asset.name }}" required>
+  <label for="category_id">種別</label>
+  <select id="category_id" name="category_id">
+    <option value="">（未選択）</option>
+    {% for c in categories if c.is_active or c.id == asset.category_id %}
+    <option value="{{ c.id }}" {% if c.id == asset.category_id %}selected{% endif %}>{{ c.name }}</option>
+    {% endfor %}
+  </select>
+  <label for="note">備考</label>
+  <input id="note" name="note" maxlength="500" value="{{ asset.note }}">
+  <p><button type="submit">保存</button> <a href="/admin/assets">一覧へ</a></p>
+</form>
+
+<h2 style="font-size:1rem;margin-top:24px">NFCタグに書き込むURL</h2>
+<p><code style="word-break:break-all">{{ url }}</code></p>
+<p class="note">このURLをタグに書き込みます（管理番号そのものはURLに含まれません）。再発行すると、これまでに書き込んだタグは使えなくなります。</p>
+<form class="inline" method="post" action="/admin/assets/{{ asset.asset_no }}/reissue"
+      onsubmit="return confirm('URLを再発行します。書き込み済みのタグは使えなくなります。よろしいですか？')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button class="sub" type="submit">URLを再発行</button>
+</form>
+
+<h2 style="font-size:1rem;margin-top:24px">廃棄</h2>
+<form class="inline" method="post" action="/admin/assets/{{ asset.asset_no }}/dispose"
+      onsubmit="return confirm('{{ '廃棄を取り消します。' if not asset.is_active else '廃棄します（台帳から非表示になります）。' }}よろしいですか？')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button class="sub" type="submit">{{ '廃棄を取り消す' if not asset.is_active else '廃棄する' }}</button>
+</form>
+{% endblock %}

@@ -32,7 +32,9 @@
   <header>
     <nav>
       <a href="/">ホーム</a>
-      {% if user.role == 'admin' %}<a href="/admin/users">ユーザー管理</a>{% endif %}
+      {% if user.role == 'admin' %}
+      <a href="/admin/assets">備品</a><a href="/admin/floors">フロア図</a><a href="/admin/categories">種別</a><a href="/admin/users">ユーザー</a>
+      {% endif %}
       <a href="/account/password">パスワード変更</a>
     </nav>
     <form method="post" action="/logout" class="inline">
