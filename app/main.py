@@ -11,7 +11,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.auth import RedirectRequired
 from app.config import load_settings
 from app.db import Base, get_engine
-from app.routers import account, admin, admin_master, geo_test
+from app.routers import account, admin, admin_master, geo_test, tags
 from app.services.seed import seed_categories
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -46,6 +46,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 app.include_router(account.router)
 app.include_router(admin.router)
 app.include_router(admin_master.router)
+app.include_router(tags.router)
 app.include_router(geo_test.router)
 
 

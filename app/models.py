@@ -85,6 +85,23 @@ class Asset(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
 
 
+class Scan(Base):
+    """備品タグのタッチ記録。追記のみ（更新・削除しない）。位置が取れなかったときは、位置はNULL。"""
+
+    __tablename__ = "scans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    asset_no: Mapped[str] = mapped_column(String(10), index=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    latitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    longitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    accuracy_m: Mapped[float | None] = mapped_column(Float, nullable=True)
+    altitude: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error_message: Mapped[str] = mapped_column(Unicode(200), default="")
+    user_agent: Mapped[str] = mapped_column(Unicode(300), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
 class GeoTest(Base):
     """位置情報テストの記録。社内各フロアでの誤差を測るために使う。"""
 

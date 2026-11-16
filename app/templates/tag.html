@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}備品タグ{% endblock %}
+{% block content %}
+{% if not asset %}
+<h1>このタグは使えません</h1>
+<p class="err">登録されていないか、廃棄された備品のタグです。管理者に確認してください。</p>
+{% else %}
+<h1>{{ asset.name }}</h1>
+<p class="note">{{ category.name if category else '種別なし' }}</p>
+<meta name="csrf" content="{{ csrf_token(request) }}">
+<div class="issued" id="status" data-token="{{ token }}">所在を記録しています…</div>
+<p class="note" id="detail"></p>
+<p><a href="/">ホームへ</a></p>
+<script src="/static/tag.js"></script>
+{% endif %}
+{% endblock %}
