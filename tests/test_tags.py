@@ -59,6 +59,7 @@ def test_tag_page_has_manual_record_button_and_reload_guard(client, make_user, a
     page = client.get(f"/i/{asset['token']}").text
     assert 'id="record-btn"' in page  # 記録し直すボタン（自動は、タッチして開いたときだけ）
     assert "/static/tag_logic.js" in page and "再読み込みしても、記録は更新されません" in page
+    assert "最大8秒" in page  # 位置を取る時間の説明
     assert client.get("/static/tag_logic.js").status_code == 200
 
 
