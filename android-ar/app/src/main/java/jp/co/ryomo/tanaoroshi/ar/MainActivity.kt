@@ -34,8 +34,8 @@ private val ASSET_NAMES = mapOf(
 private const val BLUE = 0xFF1A56DB.toInt()
 
 /** カメラ映像の大きさ（dp）。カメラの縦横比（3:4）に合わせると、映像が切り取られず、視野の全体が見える */
-private const val CAMERA_WIDTH_DP = 225
-private const val CAMERA_HEIGHT_DP = 300
+private const val CAMERA_WIDTH_DP = 270
+private const val CAMERA_HEIGHT_DP = 360
 
 /**
  * 備品の位置を、ARの追跡で記録し、探す。
