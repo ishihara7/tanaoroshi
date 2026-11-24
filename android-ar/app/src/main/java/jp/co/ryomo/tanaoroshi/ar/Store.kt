@@ -15,6 +15,8 @@ data class Settings(
     val by: Double = 0.0,
     val facingA: Double = 0.0,
     val facingB: Double = 0.0,
+    /** カメラ映像の向き（0〜3）。この端末では、ARCoreの向きの推定がずれるので、1を既定にした */
+    val cameraRot: Int = 1,
 ) {
     fun anchors(): List<AnchorDef> = listOf(
         AnchorDef("Awest", "アンカーA", 0.0, 0.0, facingA),
@@ -33,6 +35,7 @@ class Store(context: Context) {
             by = prefs.getFloat("by", d.by.toFloat()).toDouble(),
             facingA = prefs.getFloat("facingA", d.facingA.toFloat()).toDouble(),
             facingB = prefs.getFloat("facingB", d.facingB.toFloat()).toDouble(),
+            cameraRot = prefs.getInt("cameraRot", d.cameraRot),
         )
     }
 
@@ -40,6 +43,7 @@ class Store(context: Context) {
         prefs.edit()
             .putFloat("bx", s.bx.toFloat()).putFloat("by", s.by.toFloat())
             .putFloat("facingA", s.facingA.toFloat()).putFloat("facingB", s.facingB.toFloat())
+            .putInt("cameraRot", s.cameraRot)
             .apply()
     }
 

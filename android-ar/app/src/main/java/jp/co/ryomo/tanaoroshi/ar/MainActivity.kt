@@ -16,6 +16,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -42,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var engine: ArEngine
     private lateinit var glView: GLSurfaceView
     private lateinit var content: LinearLayout
+    private lateinit var scroll: ScrollView
     private lateinit var store: Store
 
     private var screen = Screen.HOME
@@ -53,6 +55,7 @@ class MainActivity : Activity() {
 
     // 画面ごとの、更新される部品
     private var statusView: TextView? = null
+    private var stepsView: TextView? = null
     private var messageView: TextView? = null
     private var arrowView: ArrowView? = null
     private var distanceView: TextView? = null
@@ -76,6 +79,7 @@ class MainActivity : Activity() {
         registry.putAll(store.loadRegistry())
 
         engine = ArEngine(this) { text, pose -> runOnUiThread { handleQr(text, pose) } }
+        engine.rotationOverride = intent.getIntExtra("rot", settings.cameraRot) // adbからの指定が、あれば優先
         glView = GLSurfaceView(this).apply {
             preserveEGLContextOnPause = true
             setEGLContextClientVersion(2)
@@ -87,13 +91,12 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(12), dp(16), dp(24))
         }
-        val scroll = ScrollView(this).apply { addView(content) }
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setBackgroundColor(0xFFF4F6F8.toInt())
-            setPadding(0, dp(40), 0, 0)
-            addView(glView, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1))
-            addView(scroll, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        scroll = ScrollView(this).apply { addView(content) }
+        // カメラ（AR）は、常に画面いっぱいに置く（大きさを変えると、映像がゆがむため）。
+        // 登録・探す では、下の約6割を、操作の画面が覆い、ホーム・設定 では、全面を覆う。
+        val root = FrameLayout(this).apply {
+            addView(glView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         setContentView(root)
         show(Screen.HOME)
@@ -136,7 +139,7 @@ class MainActivity : Activity() {
 
         if (ref.isAnchor) {
             val a = settings.anchors().find { it.token == ref.token }
-                ?: return say("登録されていないアンカーです。", false)
+                ?: return say("このアンカー（${ref.token}）は、設定にありません。アンカーA（West）かB（East）のQRを読んでください。", false)
             val notes = mutableListOf<String>()
             // 診断：これまでの追跡で出した位置と、アンカーの本当の位置の差（ARの精度の目安）
             val live = engine.live
@@ -182,14 +185,16 @@ class MainActivity : Activity() {
     private fun show(s: Screen) {
         screen = s
         content.removeAllViews()
-        statusView = null; messageView = null; arrowView = null
+        statusView = null; stepsView = null; messageView = null; arrowView = null
         distanceView = null; bearingView = null; errorView = null
-        val camHeight = when (s) {
-            Screen.REGISTER -> dp(340)
-            Screen.SEARCH -> dp(180)
-            else -> 1
-        }
-        glView.layoutParams = (glView.layoutParams as LinearLayout.LayoutParams).apply { height = camHeight }
+        val overlay = s == Screen.REGISTER || s == Screen.SEARCH
+        val screenH = resources.displayMetrics.heightPixels
+        scroll.layoutParams = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            if (overlay) (screenH * 0.58).toInt() else ViewGroup.LayoutParams.MATCH_PARENT,
+        ).apply { gravity = Gravity.BOTTOM }
+        scroll.setBackgroundColor(if (overlay) 0xF5F4F6F8.toInt() else 0xFFF4F6F8.toInt())
+        content.setPadding(dp(16), if (overlay) dp(12) else dp(48), dp(16), dp(24))
         when (s) {
             Screen.HOME -> buildHome()
             Screen.REGISTER -> buildRegister()
@@ -225,6 +230,42 @@ class MainActivity : Activity() {
             }
         }
 
+    /** 手順を、番号つきで出す。いまの手順に ▶、済んだものに ✓ を付ける（100ミリ秒ごとに更新）。 */
+    private fun stepsCard() = TextView(this).apply {
+        textSize = 16f
+        setTextColor(0xFF1E3A8A.toInt())
+        setBackgroundColor(0xFFE0E7FF.toInt())
+        setPadding(dp(14), dp(10), dp(14), dp(10))
+        text = stepsText()
+    }
+
+    private fun stepsText(): String {
+        val hasRef = engine.hasReference()
+        val steps: List<String>
+        val current: Int
+        if (screen == Screen.REGISTER) {
+            steps = listOf(
+                "アンカーのQRを、壁に向かって正対して読む",
+                "歩いて、備品に近づく",
+                "備品のQRを読む（そのときの位置が登録される）",
+                "次の備品へ。全部終わったら「完了して、探す」",
+            )
+            current = if (!hasRef) 0 else 1
+        } else {
+            steps = listOf(
+                "アンカーのQRを読んで、位置を合わせる",
+                "探す備品を、下から選ぶ",
+                "矢印の向きに歩く（距離が減っていく）",
+                "着いたら、備品のQRを読んで確かめる",
+            )
+            current = if (!hasRef) 0 else if (targetToken == null) 1 else 2
+        }
+        return steps.mapIndexed { i, t ->
+            val mark = if (i < current) "✓" else if (i == current) "▶" else "　"
+            "$mark ${i + 1}. $t"
+        }.joinToString("\n")
+    }
+
     private fun header(text: String, back: Screen = Screen.HOME) {
         content.addView(button("‹ 戻る", primary = false) { show(back) }.apply {
             layoutParams = LinearLayout.LayoutParams(dp(120), dp(48))
@@ -235,6 +276,7 @@ class MainActivity : Activity() {
     private fun buildHome() {
         content.addView(title("備品の位置").apply { textSize = 30f; gravity = Gravity.CENTER; setPadding(0, dp(24), 0, dp(24)) })
         content.addView(note("登録済み ${registry.size}件"))
+        content.addView(note("使い方：\n① 「登録する」で、アンカーのQR → 備品のQRの順に読み、備品の位置を登録します。\n② 「探す」で、アンカーのQRを読み、探す備品を選んで、矢印と距離に従って歩きます。"))
         content.addView(button("登録する") { show(Screen.REGISTER) })
         content.addView(button("探す", enabled = registry.isNotEmpty()) { show(Screen.SEARCH) })
         if (registry.isEmpty()) content.addView(note("探すには、先に、備品を登録してください。"))
@@ -243,6 +285,7 @@ class MainActivity : Activity() {
 
     private fun buildRegister() {
         header("登録")
+        stepsView = stepsCard().also { content.addView(it) }
         statusView = note("").also { content.addView(it) }
         messageView = TextView(this).apply {
             textSize = 18f
@@ -250,10 +293,6 @@ class MainActivity : Activity() {
             text = message
             setTextColor(if (messageOk) 0xFF065F46.toInt() else 0xFFB45309.toInt())
         }.also { content.addView(it) }
-        content.addView(note(
-            if (engine.hasReference()) "歩いて、備品のQRを読んでください。"
-            else "最初に、アンカーのQRを、壁に正対して読んでください。",
-        ))
         content.addView(title("登録した備品（${registry.size}件）").apply { textSize = 17f })
         for ((_, p) in registry) {
             content.addView(note("・${p.name}　東%.1f 北%.1f（±%.1f m）".format(p.x, p.y, p.errM)))
@@ -263,6 +302,7 @@ class MainActivity : Activity() {
 
     private fun buildSearch() {
         header("探す")
+        stepsView = stepsCard().also { content.addView(it) }
         statusView = note("").also { content.addView(it) }
         if (registry.isEmpty()) content.addView(note("登録した備品がありません。"))
         for ((token, p) in registry) {
@@ -305,9 +345,12 @@ class MainActivity : Activity() {
         val by = field("アンカーB：北へ（m）。南はマイナス", settings.by)
         val fa = field("アンカーAの壁に正対する向き（°、北が0、東が90）", settings.facingA)
         val fb = field("アンカーBの壁に正対する向き（°）", settings.facingB)
+        val cr = field("カメラ映像の向き（0〜3）。映像が横向きや逆さのときに、変えて試す", settings.cameraRot.toDouble())
         content.addView(button("保存する") {
             fun num(e: EditText, d: Double) = e.text.toString().toDoubleOrNull() ?: d
-            settings = Settings(num(bx, settings.bx), num(by, settings.by), num(fa, settings.facingA), num(fb, settings.facingB))
+            val rot = num(cr, settings.cameraRot.toDouble()).toInt().coerceIn(0, 3)
+            settings = Settings(num(bx, settings.bx), num(by, settings.by), num(fa, settings.facingA), num(fb, settings.facingB), rot)
+            engine.rotationOverride = rot
             store.saveSettings(settings)
             say("設定を保存しました。")
             show(Screen.HOME)
@@ -329,6 +372,7 @@ class MainActivity : Activity() {
 
     private fun refreshLive() {
         val l = engine.live
+        stepsView?.let { v -> stepsText().let { t -> if (v.text.toString() != t) v.text = t } }
         statusView?.text = when {
             !l.tracking -> l.trackingNote
             l.mapX == null -> l.trackingNote
