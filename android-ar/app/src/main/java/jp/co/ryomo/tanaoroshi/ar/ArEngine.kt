@@ -70,6 +70,7 @@ class ArEngine(
     private var lost = false
     private var lastFx = 0.0
     private var lastFz = -1.0
+    private var pausedSince = 0L
     /** 確認用：ARCoreに伝える画面の向き（0〜3）を、強制する。-1なら、本来の値を使う */
     @Volatile var rotationOverride = -1
         set(value) {
@@ -205,12 +206,21 @@ class ArEngine(
         drawBackground()
 
         val camera = frame.camera
+        val nowMs = System.currentTimeMillis()
         if (camera.trackingState != TrackingState.TRACKING) {
             hasLast = false
-            if (reference != null) lost = true
-            live = Live(false, "追跡できていません（${camera.trackingFailureReason}）。模様のある壁や床に向けて、ゆっくり動かしてください。",
+            if (pausedSince == 0L) pausedSince = nowMs
+            // 短い途切れは、ARCoreが自分で復帰することが多い。長く続いたときだけ、位置を信用できないとする
+            if (reference != null && nowMs - pausedSince > LOST_MS) lost = true
+            live = Live(false, "追跡できていません（${reasonText(camera.trackingFailureReason)}）",
                 null, null, null, walked, lost)
             return
+        }
+        if (pausedSince != 0L) {
+            // 復帰。途切れていた間は、ずれがたまるので、誤差の見積もりに、時間ぶんを足す
+            val lostSec = (nowMs - pausedSince) / 1000.0
+            if (reference != null) walked += lostSec * LOSS_PENALTY_M_PER_S
+            pausedSince = 0L
         }
         val pose = camera.pose
         val px = pose.tx().toDouble()
@@ -319,7 +329,23 @@ class ArEngine(
         return id
     }
 
+    private fun reasonText(r: com.google.ar.core.TrackingFailureReason): String = when (r) {
+        com.google.ar.core.TrackingFailureReason.INSUFFICIENT_FEATURES ->
+            "模様の少ない面（白い壁や床）を映しています。模様のある場所に向けてください"
+        com.google.ar.core.TrackingFailureReason.EXCESSIVE_MOTION ->
+            "動きが速すぎます。ゆっくり歩いて、ゆっくり向きを変えてください"
+        com.google.ar.core.TrackingFailureReason.INSUFFICIENT_LIGHT ->
+            "暗すぎます。明るい場所で使ってください"
+        com.google.ar.core.TrackingFailureReason.CAMERA_UNAVAILABLE ->
+            "カメラを、ほかのアプリが使っています"
+        else -> "追跡が不安定です。カメラを、周りの景色に向けて、ゆっくり動かしてください"
+    }
+
     companion object {
+        /** これより長く追跡が途切れたら、位置を信用できないとして、アンカーの読み直しを求める（ミリ秒） */
+        private const val LOST_MS = 3000L
+        /** 追跡が途切れていた1秒あたり、誤差の見積もりに足す距離（m） */
+        private const val LOSS_PENALTY_M_PER_S = 1.0
         private const val VERTEX = """
             attribute vec4 a_Position;
             attribute vec2 a_TexCoord;
