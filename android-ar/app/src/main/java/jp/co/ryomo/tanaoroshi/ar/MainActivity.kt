@@ -33,7 +33,8 @@ private val ASSET_NAMES = mapOf(
 
 private const val BLUE = 0xFF1A56DB.toInt()
 
-/** カメラ映像の高さ（dp）。大きすぎると、操作の画面が狭くなる */
+/** カメラ映像の大きさ（dp）。カメラの縦横比（3:4）に合わせると、映像が切り取られず、視野の全体が見える */
+private const val CAMERA_WIDTH_DP = 225
 private const val CAMERA_HEIGHT_DP = 300
 
 /**
@@ -98,7 +99,11 @@ class MainActivity : Activity() {
         // カメラ（AR）は、画面の上に、一定の大きさで置く（途中で大きさを変えない）。
         // 登録・探す では、その下に操作の画面を置き、ホーム・設定 では、全面を操作の画面が覆う。
         val root = FrameLayout(this).apply {
-            addView(glView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(CAMERA_HEIGHT_DP)).apply { gravity = Gravity.TOP })
+            setBackgroundColor(0xFFF4F6F8.toInt())
+            // カメラの縦横比（3:4）に合わせて、映像を切り取らずに、視野の全体を出す
+            addView(glView, FrameLayout.LayoutParams(dp(CAMERA_WIDTH_DP), dp(CAMERA_HEIGHT_DP)).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            })
             addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         setContentView(root)
