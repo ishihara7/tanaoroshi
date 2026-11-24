@@ -17,11 +17,13 @@ data class Settings(
     val facingB: Double = 0.0,
     /** カメラ映像の向きを、強制する値（0〜3）。-1なら、端末の画面の向きを、そのまま使う */
     val cameraRot: Int = -1,
+    /** アンカーBも使うか。通常は、アンカーA（原点）だけで足りる */
+    val useB: Boolean = false,
 ) {
-    fun anchors(): List<AnchorDef> = listOf(
-        AnchorDef("Awest", "アンカーA", 0.0, 0.0, facingA),
-        AnchorDef("Aeast", "アンカーB", bx, by, facingB),
-    )
+    fun anchors(): List<AnchorDef> = buildList {
+        add(AnchorDef("Awest", "アンカーA", 0.0, 0.0, facingA))
+        if (useB) add(AnchorDef("Aeast", "アンカーB", bx, by, facingB))
+    }
 }
 
 /** 端末への保存（設定と、登録した備品）。 */
@@ -36,6 +38,7 @@ class Store(context: Context) {
             facingA = prefs.getFloat("facingA", d.facingA.toFloat()).toDouble(),
             facingB = prefs.getFloat("facingB", d.facingB.toFloat()).toDouble(),
             cameraRot = prefs.getInt("cameraRot", d.cameraRot),
+            useB = prefs.getBoolean("useB", d.useB),
         )
     }
 
@@ -43,7 +46,7 @@ class Store(context: Context) {
         prefs.edit()
             .putFloat("bx", s.bx.toFloat()).putFloat("by", s.by.toFloat())
             .putFloat("facingA", s.facingA.toFloat()).putFloat("facingB", s.facingB.toFloat())
-            .putInt("cameraRot", s.cameraRot)
+            .putInt("cameraRot", s.cameraRot).putBoolean("useB", s.useB)
             .apply()
     }
 

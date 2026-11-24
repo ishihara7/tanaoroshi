@@ -139,7 +139,11 @@ class MainActivity : Activity() {
 
         if (ref.isAnchor) {
             val a = settings.anchors().find { it.token == ref.token }
-                ?: return say("このアンカー（${ref.token}）は、設定にありません。アンカーA（West）かB（East）のQRを読んでください。", false)
+                ?: return say(
+                    if (ref.token == "Aeast") "アンカーBは、使わない設定です。アンカーAのQRを読んでください（Bは、設定の詳細で、使えるようにできます）。"
+                    else "このアンカー（${ref.token}）は、登録されていません。アンカーAのQR（Awest）を読んでください。",
+                    false,
+                )
             val notes = mutableListOf<String>()
             // 診断：これまでの追跡で出した位置と、アンカーの本当の位置の差（ARの精度の目安）
             val live = engine.live
@@ -332,26 +336,49 @@ class MainActivity : Activity() {
 
     private fun buildSettings() {
         header("設定")
-        fun field(label: String, value: Double): EditText {
-            content.addView(note(label))
+        fun field(parent: LinearLayout, label: String, value: Double): EditText {
+            parent.addView(note(label))
             return EditText(this).apply {
                 inputType = InputType.TYPE_CLASS_NUMBER or InputType.TYPE_NUMBER_FLAG_DECIMAL or InputType.TYPE_NUMBER_FLAG_SIGNED
                 setText(value.toString())
                 textSize = 18f
-            }.also { content.addView(it) }
+            }.also { parent.addView(it) }
         }
-        content.addView(note("アンカーAを原点にします。QRは、AがWest、BがEastです。"))
-        val bx = field("アンカーB：東へ（m）。西はマイナス", settings.bx)
-        val by = field("アンカーB：北へ（m）。南はマイナス", settings.by)
-        val fa = field("アンカーAの壁に正対する向き（°、北が0、東が90）", settings.facingA)
-        val fb = field("アンカーBの壁に正対する向き（°）", settings.facingB)
-        val cr = field("カメラ映像の向きの強制（-1は自動。映像が横向きや逆さのときだけ、0〜3を試す）", settings.cameraRot.toDouble())
+        content.addView(note("アンカーは、1つ（A）で使えます。アンカーAのQRは、Awest です。"))
+        val fa = field(content, "アンカーAの壁に正対する向き（°、北が0、東が90）。分からなければ、0のままで構いません", settings.facingA)
+
+        // 詳細（通常は、閉じておく）
+        var useB = settings.useB
+        val advanced = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = View.GONE
+        }
+        val useBButton = button(if (useB) "アンカーBを使う：オン" else "アンカーBを使う：オフ", primary = false) {}
+        useBButton.setOnClickListener {
+            useB = !useB
+            useBButton.text = if (useB) "アンカーBを使う：オン" else "アンカーBを使う：オフ"
+        }
+        advanced.addView(note("アンカーBは、精度の確認や、広いフロアで、位置を合わせ直すときに使います。Aを原点にした位置を入れます。"))
+        advanced.addView(useBButton)
+        val bx = field(advanced, "アンカーB：東へ（m）。西はマイナス", settings.bx)
+        val by = field(advanced, "アンカーB：北へ（m）。南はマイナス", settings.by)
+        val fb = field(advanced, "アンカーBの壁に正対する向き（°）", settings.facingB)
+        val cr = field(advanced, "カメラ映像の向きの強制（-1は自動。映像が横向きや逆さのときだけ、0〜3を試す）", settings.cameraRot.toDouble())
+        content.addView(button("詳細設定（アンカーB・カメラ）を開く／閉じる", primary = false) {
+            advanced.visibility = if (advanced.visibility == View.GONE) View.VISIBLE else View.GONE
+        })
+        content.addView(advanced)
+
         content.addView(button("保存する") {
             fun num(e: EditText, d: Double) = e.text.toString().toDoubleOrNull() ?: d
             val rot = num(cr, settings.cameraRot.toDouble()).toInt().coerceIn(-1, 3)
-            settings = Settings(num(bx, settings.bx), num(by, settings.by), num(fa, settings.facingA), num(fb, settings.facingB), rot)
-            engine.rotationOverride = rot
+            settings = Settings(
+                bx = num(bx, settings.bx), by = num(by, settings.by),
+                facingA = num(fa, settings.facingA), facingB = num(fb, settings.facingB),
+                cameraRot = rot, useB = useB,
+            )
             store.saveSettings(settings)
+            engine.rotationOverride = rot
             say("設定を保存しました。")
             show(Screen.HOME)
         })
