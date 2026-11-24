@@ -33,6 +33,9 @@ private val ASSET_NAMES = mapOf(
 
 private const val BLUE = 0xFF1A56DB.toInt()
 
+/** カメラ映像の高さ（dp）。大きすぎると、操作の画面が狭くなる */
+private const val CAMERA_HEIGHT_DP = 300
+
 /**
  * 備品の位置を、ARの追跡で記録し、探す。
  *   登録：アンカーのQRを読む → 歩く → 備品のQRを読む（そのときの位置を登録）
@@ -92,10 +95,10 @@ class MainActivity : Activity() {
             setPadding(dp(16), dp(12), dp(16), dp(24))
         }
         scroll = ScrollView(this).apply { addView(content) }
-        // カメラ（AR）は、常に画面いっぱいに置く（大きさを変えると、映像がゆがむため）。
-        // 登録・探す では、下の約6割を、操作の画面が覆い、ホーム・設定 では、全面を覆う。
+        // カメラ（AR）は、画面の上に、一定の大きさで置く（途中で大きさを変えない）。
+        // 登録・探す では、その下に操作の画面を置き、ホーム・設定 では、全面を操作の画面が覆う。
         val root = FrameLayout(this).apply {
-            addView(glView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            addView(glView, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(CAMERA_HEIGHT_DP)).apply { gravity = Gravity.TOP })
             addView(scroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         setContentView(root)
@@ -192,11 +195,10 @@ class MainActivity : Activity() {
         statusView = null; stepsView = null; messageView = null; arrowView = null
         distanceView = null; bearingView = null; errorView = null
         val overlay = s == Screen.REGISTER || s == Screen.SEARCH
-        val screenH = resources.displayMetrics.heightPixels
         scroll.layoutParams = FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            if (overlay) (screenH * 0.58).toInt() else ViewGroup.LayoutParams.MATCH_PARENT,
-        ).apply { gravity = Gravity.BOTTOM }
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ).apply { topMargin = if (overlay) dp(CAMERA_HEIGHT_DP) else 0 }
         scroll.setBackgroundColor(if (overlay) 0xFFF4F6F8.toInt() else 0xFFF4F6F8.toInt())
         content.setPadding(dp(16), if (overlay) dp(12) else dp(48), dp(16), dp(24))
         when (s) {
