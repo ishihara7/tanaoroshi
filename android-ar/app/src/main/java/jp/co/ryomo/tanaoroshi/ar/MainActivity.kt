@@ -169,9 +169,19 @@ class MainActivity : Activity() {
         val pos = engine.mapAt(pose) ?: return
         val live = engine.live
         val name = ASSET_NAMES[ref.token] ?: ref.token
-        val err = ErrorModel.estimate(live.walkedM) + if (live.lostTracking) 5.0 else 0.0
+        val err = ErrorModel.estimate(live.walkedM)
 
         if (screen == Screen.REGISTER) {
+            if (live.lostTracking) {
+                // 追跡が途切れたあとは、位置を信用できない。登録済みの備品なら、それを目印に立て直す
+                val known = registry[ref.token]
+                return if (known != null) {
+                    engine.correctPosition(pose, known.x, known.y)
+                    say("「$name」（登録済み）を目印に、位置を合わせ直しました。続けて、次の備品へ進めます。")
+                } else {
+                    say("追跡が途切れていて、位置を信用できません。アンカー、または登録済みの備品のQRを読んで、位置を合わせ直してください。", false)
+                }
+            }
             registry[ref.token] = Placed(name, pos.first, pos.second, err)
             store.saveRegistry(registry)
             say("「$name」を登録しました（誤差 ±%.1f m）。".format(err))
@@ -412,7 +422,7 @@ class MainActivity : Activity() {
             l.mapX == null -> l.trackingNote
             else -> "位置　東%.1f m　北%.1f m　／　%.0f m歩行（誤差 ±%.1f m）%s".format(
                 l.mapX, l.mapY, l.walkedM, ErrorModel.estimate(l.walkedM),
-                if (l.lostTracking) "\n追跡が途切れました。アンカーのQRを読み直してください。" else "",
+                if (l.lostTracking) "\n追跡が途切れました。アンカー、または登録済みの備品のQRを読んで、位置を合わせ直してください。" else "",
             )
         }
 

@@ -99,6 +99,18 @@ class ArEngine(
         lost = false
     }
 
+    /**
+     * 位置が分かっている点（登録済みの備品）のQRを読んだとき、向きは保ったまま、位置だけを合わせ直す。
+     * 追跡が途切れたあとの、立て直しに使う。ARの世界座標そのものが変わっていたら、アンカーを読み直す必要がある。
+     */
+    fun correctPosition(pose: PoseSnapshot, x: Double, y: Double) {
+        val old = reference ?: return
+        val bearing = old.bearingOf(pose.fx, pose.fz)
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing)
+        walked = 0.0
+        lost = false
+    }
+
     fun hasReference(): Boolean = reference != null
 
     /** 現在位置を、フロア図上の座標にする（QRを読んだ時点のカメラの位置から）。 */
