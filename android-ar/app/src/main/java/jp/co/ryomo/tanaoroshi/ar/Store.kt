@@ -15,8 +15,8 @@ data class Settings(
     val by: Double = 0.0,
     val facingA: Double = 0.0,
     val facingB: Double = 0.0,
-    /** カメラ映像の向き（0〜3）。この端末では、ARCoreの向きの推定がずれるので、1を既定にした */
-    val cameraRot: Int = 1,
+    /** カメラ映像の向きを、強制する値（0〜3）。-1なら、端末の画面の向きを、そのまま使う */
+    val cameraRot: Int = -1,
 ) {
     fun anchors(): List<AnchorDef> = listOf(
         AnchorDef("Awest", "アンカーA", 0.0, 0.0, facingA),

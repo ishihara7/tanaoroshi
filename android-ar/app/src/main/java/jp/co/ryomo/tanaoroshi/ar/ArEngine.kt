@@ -6,6 +6,7 @@ import android.opengl.GLES20
 import android.opengl.GLSurfaceView
 import com.google.ar.core.ArCoreApk
 import com.google.ar.core.Config
+import com.google.ar.core.Coordinates2d
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.NotYetAvailableException
@@ -69,7 +70,6 @@ class ArEngine(
     private var lost = false
     private var lastFx = 0.0
     private var lastFz = -1.0
-    private var lastLogAt = 0L
     /** 確認用：ARCoreに伝える画面の向き（0〜3）を、強制する。-1なら、本来の値を使う */
     @Volatile var rotationOverride = -1
         set(value) {
@@ -197,14 +197,11 @@ class ArEngine(
         // 画面の向き・大きさに合わせて、映像の切り出し位置を、毎フレーム計算する（変わったときだけだと、ずれることがあった）
         quadCoords.position(0)
         quadTexCoords.position(0)
-        frame.transformDisplayUvCoords(quadCoords, quadTexCoords)
-        if (System.currentTimeMillis() - lastLogAt > 2000) {
-            lastLogAt = System.currentTimeMillis()
-            val t = FloatArray(8); quadTexCoords.position(0); quadTexCoords.get(t); quadTexCoords.position(0)
-            @Suppress("DEPRECATION")
-            val rot = activity.windowManager.defaultDisplay.rotation
-            android.util.Log.d("ArEngine", "view=${viewWidth}x${viewHeight} rot=$rot tex=${t.joinToString(",") { "%.2f".format(it) }}")
-        }
+        // 画面の四隅（OpenGLの正規化座標）が、カメラ映像のどこに当たるかを、ARCoreに計算してもらう
+        frame.transformCoordinates2d(
+            Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES, quadCoords,
+            Coordinates2d.TEXTURE_NORMALIZED, quadTexCoords,
+        )
         drawBackground()
 
         val camera = frame.camera

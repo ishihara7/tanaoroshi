@@ -193,7 +193,7 @@ class MainActivity : Activity() {
             ViewGroup.LayoutParams.MATCH_PARENT,
             if (overlay) (screenH * 0.58).toInt() else ViewGroup.LayoutParams.MATCH_PARENT,
         ).apply { gravity = Gravity.BOTTOM }
-        scroll.setBackgroundColor(if (overlay) 0xF5F4F6F8.toInt() else 0xFFF4F6F8.toInt())
+        scroll.setBackgroundColor(if (overlay) 0xFFF4F6F8.toInt() else 0xFFF4F6F8.toInt())
         content.setPadding(dp(16), if (overlay) dp(12) else dp(48), dp(16), dp(24))
         when (s) {
             Screen.HOME -> buildHome()
@@ -345,10 +345,10 @@ class MainActivity : Activity() {
         val by = field("アンカーB：北へ（m）。南はマイナス", settings.by)
         val fa = field("アンカーAの壁に正対する向き（°、北が0、東が90）", settings.facingA)
         val fb = field("アンカーBの壁に正対する向き（°）", settings.facingB)
-        val cr = field("カメラ映像の向き（0〜3）。映像が横向きや逆さのときに、変えて試す", settings.cameraRot.toDouble())
+        val cr = field("カメラ映像の向きの強制（-1は自動。映像が横向きや逆さのときだけ、0〜3を試す）", settings.cameraRot.toDouble())
         content.addView(button("保存する") {
             fun num(e: EditText, d: Double) = e.text.toString().toDoubleOrNull() ?: d
-            val rot = num(cr, settings.cameraRot.toDouble()).toInt().coerceIn(0, 3)
+            val rot = num(cr, settings.cameraRot.toDouble()).toInt().coerceIn(-1, 3)
             settings = Settings(num(bx, settings.bx), num(by, settings.by), num(fa, settings.facingA), num(fb, settings.facingB), rot)
             engine.rotationOverride = rot
             store.saveSettings(settings)
