@@ -6,6 +6,9 @@ import org.json.JSONObject
 /** 登録した備品の位置（フロア図上。x：東、y：北。単位はm）と、その誤差の見積もり。 */
 data class Placed(val name: String, val x: Double, val y: Double, val errM: Double, val floor: Int = 1)
 
+/** 階の表示。アンカーの記号つき（1階＝A、2階＝B、3階＝C）。 */
+fun floorLabel(floor: Int): String = "${floor}階（${"ABC".getOrElse(floor - 1) { '?' }}）"
+
 /** アンカーの定義。floor：そのアンカーがある階。facingDeg：QRを読むとき向く方向（北を0°とした時計回り）。 */
 data class AnchorDef(val token: String, val name: String, val floor: Int, val x: Double, val y: Double, val facingDeg: Double)
 

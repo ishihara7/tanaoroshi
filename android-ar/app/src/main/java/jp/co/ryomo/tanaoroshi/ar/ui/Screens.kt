@@ -53,6 +53,7 @@ import jp.co.ryomo.tanaoroshi.ar.Screen
 import jp.co.ryomo.tanaoroshi.ar.Settings
 import jp.co.ryomo.tanaoroshi.ar.compassLabel
 import jp.co.ryomo.tanaoroshi.ar.distanceAndBearing
+import jp.co.ryomo.tanaoroshi.ar.floorLabel
 
 /** カメラ映像の縦横比（幅:高さ = 3:4）。切り取らずに、視野の全体を出す。 */
 private const val CAMERA_ASPECT = 3f / 4f
@@ -94,7 +95,7 @@ fun HomeScreen(model: AppModel) {
                         }
                     }
                     StatusBadge(
-                        text = if (model.hasRef) "位置合わせ済み" else "位置は未設定",
+                        text = model.floor?.takeIf { model.hasRef }?.let { "${floorLabel(it)}で合わせ済み" } ?: "位置は未設定",
                         tone = if (model.hasRef) Tone.OK else Tone.INFO,
                     )
                 }
@@ -124,7 +125,7 @@ fun HomeScreen(model: AppModel) {
                 SectionLabel("最近の登録")
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     model.items.takeLast(3).reversed().forEach {
-                        AssetRow(it.placed.name, "東%.1f m　北%.1f m　（±%.1f m）".format(it.placed.x, it.placed.y, it.placed.errM))
+                        AssetRow(it.placed.name, "%s　東%.1f m　北%.1f m　（±%.1f m）".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y, it.placed.errM))
                     }
                 }
             }
@@ -232,6 +233,13 @@ private fun CameraOverlay(model: AppModel, ghost: Boolean) {
         if (l.tracking && l.points in 0..LOW_POINTS) {
             StatusBadge("特徴が少ない", Tone.WARN, Modifier.align(Alignment.TopStart))
         }
+        // いまの階（アンカーを読むと決まる）
+        val f = model.floor
+        StatusBadge(
+            if (f != null) floorLabel(f) else "階は未確定",
+            if (f != null) Tone.INFO else Tone.WARN,
+            Modifier.align(Alignment.TopEnd),
+        )
     }
 }
 
@@ -276,7 +284,7 @@ fun RegisterScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
             model.items.forEach {
                 AssetRow(
                     name = it.placed.name,
-                    detail = "東%.1f m　北%.1f m　（±%.1f m）".format(it.placed.x, it.placed.y, it.placed.errM),
+                    detail = "%s　東%.1f m　北%.1f m　（±%.1f m）".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y, it.placed.errM),
                 ) { TextButton(onClick = { model.removeItem(it.token) }) { Text("削除", color = MaterialTheme.colorScheme.error) } }
             }
         }
@@ -298,6 +306,10 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
         // 進み具合
         AppCard {
             Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Text(
+                    model.floor?.let { "${floorLabel(it)}の棚卸" } ?: "階は未確定（アンカーを読んでください）",
+                    fontSize = 14.sp, color = cs.onSurfaceVariant,
+                )
                 Row(verticalAlignment = Alignment.Bottom) {
                     Text("$checked", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = if (checked == total && total > 0) LocalStatusColors.current.success else cs.primary)
                     Text(" / $total 件 確認済み", fontSize = 16.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).weight(1f))
@@ -342,7 +354,7 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
             model.floorItems.forEach {
                 AssetRow(
                     name = it.placed.name,
-                    detail = "東%.1f m　北%.1f m".format(it.placed.x, it.placed.y),
+                    detail = "%s　東%.1f m　北%.1f m".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y),
                     selected = it.token == model.targetToken,
                     onClick = { model.selectTarget(it.token) },
                 ) {
