@@ -34,6 +34,7 @@ private val ASSET_NAMES = mapOf(
 private const val BLUE = 0xFF1A56DB.toInt()
 
 /** カメラ映像の大きさ（dp）。カメラの縦横比（3:4）に合わせると、映像が切り取られず、視野の全体が見える */
+private const val LOW_POINTS = 25
 private const val CAMERA_WIDTH_DP = 270
 private const val CAMERA_HEIGHT_DP = 360
 
@@ -422,7 +423,8 @@ class MainActivity : Activity() {
             l.mapX == null -> l.trackingNote
             else -> "位置　東%.1f m　北%.1f m　／　%.0f m歩行（誤差 ±%.1f m）%s".format(
                 l.mapX, l.mapY, l.walkedM, ErrorModel.estimate(l.walkedM),
-                if (l.lostTracking) "\n追跡が途切れました。アンカー、または登録済みの備品のQRを読んで、位置を合わせ直してください。" else "",
+                (if (l.points in 0..LOW_POINTS) "\n⚠ 壁や床ばかり映っています。棚・机・柱など、模様のあるものが映るように向けてください。" else "") +
+                    (if (l.lostTracking) "\n追跡が途切れました。アンカー、または登録済みの備品のQRを読んで、位置を合わせ直してください。" else ""),
             )
         }
 

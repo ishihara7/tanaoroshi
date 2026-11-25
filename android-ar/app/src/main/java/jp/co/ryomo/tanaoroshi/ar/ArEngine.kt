@@ -38,6 +38,8 @@ class Live(
     val walkedM: Double,
     /** 追跡が途切れたことがある（アンカーを読み直すまで、位置を信用できない） */
     val lostTracking: Boolean,
+    /** いま見えている特徴点の数（少ないと、追跡が途切れやすい）。不明は -1 */
+    val points: Int = -1,
 )
 
 /**
@@ -255,10 +257,16 @@ class ArEngine(
             Live(true, "追跡できています。アンカーのQRを読み取ってください。", null, null, null, 0.0, false)
         } else {
             val (mx, my) = ref.toMap(px, pz)
-            Live(true, "", mx, my, ref.bearingOf(lastFx, lastFz), walked, lost)
+            Live(true, "", mx, my, ref.bearingOf(lastFx, lastFz), walked, lost, countPoints(frame))
         }
 
         maybeDecode(frame, PoseSnapshot(px, pz, lastFx, lastFz))
+    }
+
+    private fun countPoints(frame: com.google.ar.core.Frame): Int = try {
+        frame.acquirePointCloud().use { it.points.remaining() / 4 }
+    } catch (e: Exception) {
+        -1
     }
 
     // ---------------- QR ----------------
