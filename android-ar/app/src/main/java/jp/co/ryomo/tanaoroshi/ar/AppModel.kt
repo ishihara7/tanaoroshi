@@ -23,6 +23,9 @@ private val ASSET_NAMES = mapOf(
 /** 見えている特徴点が、これ以下だと、壁や床ばかりと見なして警告する */
 const val LOW_POINTS = 25
 
+/** 同じ階で、登録位置からこれ以上離れて読んだら「場所違い」。ARの誤差を見込んだ仮の値（実機で調整する） */
+const val MOVED_THRESHOLD_M = 3.0
+
 /** 登録した備品の1件（画面に出す用）。 */
 data class PlacedItem(val token: String, val placed: Placed)
 
@@ -74,6 +77,28 @@ class AppModel(
         store.saveConfirmed(tokens)
     }
 
+    /** 今回の棚卸で、予定にないのに読んだ備品（端末に保存する） */
+    var unexpected by mutableStateOf<Map<String, Unexpected>>(store.loadUnexpected())
+        private set
+
+    /** 今回の棚卸で、予定と違う場所（階・位置）で読んだ備品（端末に保存する） */
+    var moved by mutableStateOf<Map<String, MovedAt>>(store.loadMoved())
+        private set
+
+    private fun updateUnexpected(m: Map<String, Unexpected>) {
+        unexpected = m
+        store.saveUnexpected(m)
+    }
+
+    private fun updateMoved(m: Map<String, MovedAt>) {
+        moved = m
+        store.saveMoved(m)
+    }
+
+    /** ゴースト・巡回の対象（位置が分かっている、いまの階の備品） */
+    val mapItems: List<PlacedItem>
+        get() = floorItems.filter { it.placed.located }
+
     /** 巡回モード：未確認の備品を、短い順路で、順に案内する */
     var routeMode by mutableStateOf(false)
         private set
@@ -113,6 +138,7 @@ class AppModel(
     }
 
     fun selectTarget(token: String) {
+        if (items.firstOrNull { it.token == token }?.placed?.located == false) return say("位置が分からない備品です。案内はできません。", false)
         targetToken = token
         routeMode = false
     }
@@ -122,7 +148,7 @@ class AppModel(
         val l = engine.live
         val x = fromX ?: l.mapX ?: 0.0
         val y = fromY ?: l.mapY ?: 0.0
-        val pts = floorItems.filter { it.token !in confirmed }.map { RoutePoint(it.token, it.placed.x, it.placed.y) }
+        val pts = mapItems.filter { it.token !in confirmed }.map { RoutePoint(it.token, it.placed.x, it.placed.y) }
         route = RoutePlanner.plan(x, y, pts)
         targetToken = route.firstOrNull()?.token
     }
@@ -143,6 +169,8 @@ class AppModel(
     /** 棚卸を、最初からやり直す（全部を、未確認に戻す） */
     fun resetConfirmed() {
         updateConfirmed(emptySet())
+        updateMoved(emptyMap())
+        updateUnexpected(emptyMap())
         say("棚卸を、最初からやり直します。")
         if (routeMode) startRoute()
     }
@@ -175,6 +203,7 @@ class AppModel(
     fun removeItem(token: String) {
         items.removeAll { it.token == token }
         updateConfirmed(confirmed - token)
+        updateMoved(moved - token)
         if (targetToken == token) targetToken = null
         if (routeMode) startRoute()
         persist()
@@ -188,6 +217,8 @@ class AppModel(
         store.clearAll()
         items.clear()
         confirmed = emptySet()
+        moved = emptyMap()
+        unexpected = emptyMap()
         targetToken = null
         floor = null
         stopRoute()
@@ -196,6 +227,44 @@ class AppModel(
         engine.clearReference()
         say("すべてのデータを消しました。", true)
         screen = Screen.HOME
+    }
+
+    /**
+     * 棚卸を終える。今回の結果が、次回の予定になる。
+     * 確かめた備品は、前回未確認の印を消す（場所違いなら、読んだ場所に更新）。
+     * 確かめられなかった備品は、場所はそのままで「前回未確認」の印を付ける。
+     * 予定にないのに読んだ備品は、新しい予定に加える（位置が取れていなければ、階だけ）。
+     */
+    fun finishInventory() {
+        val checkedN = items.count { it.token in confirmed }
+        val missedN = items.size - checkedN
+        val movedN = items.count { it.token in confirmed && it.token in moved }
+        val extra = unexpected.values.filter { u -> items.none { it.token == u.token } }
+        val next = items.map { it ->
+            val p = it.placed
+            if (it.token in confirmed) {
+                val m = moved[it.token]
+                val at = if (m != null && m.x != null && m.y != null) p.copy(x = m.x, y = m.y, floor = m.floor) else p
+                it.copy(placed = at.copy(missedLast = false, wasUnexpected = false))
+            } else {
+                it.copy(placed = p.copy(missedLast = true))
+            }
+        } + extra.map {
+            val located = it.x != null && it.y != null
+            PlacedItem(
+                it.token,
+                Placed(it.name, it.x ?: 0.0, it.y ?: 0.0, if (located) ErrorModel.estimate(engine.live.walkedM) else 0.0, it.floor, located, wasUnexpected = true),
+            )
+        }
+        items.clear()
+        items.addAll(next)
+        persist()
+        updateConfirmed(emptySet())
+        updateMoved(emptyMap())
+        updateUnexpected(emptyMap())
+        targetToken = null
+        stopRoute()
+        say("棚卸を終えました。確認 ${checkedN}件（うち場所違い ${movedN}件）、未確認 ${missedN}件、想定外 ${extra.size}件。次回の予定にしました。")
     }
 
     private fun persist() {
@@ -264,22 +333,39 @@ class AppModel(
         }
 
         // 棚卸：備品のQRを読んだら、確かめた備品にする。アンカーを読む前でも、確かめることはできる
+        val posNow = if (engine.hasReference() && !l.lostTracking) engine.mapAt(pose) else null
         val placed = items.firstOrNull { it.token == ref.token }?.placed
-            ?: return say("「$name」は、登録されていません。備品登録モードで、登録してください。", false)
+        if (placed == null) {
+            // 予定にない備品。登録はせず、「想定外」として記録する（位置が取れなければ階だけ）
+            val first = ref.token !in unexpected
+            updateUnexpected(unexpected + (ref.token to Unexpected(ref.token, name, floor ?: 1, posNow?.first, posNow?.second)))
+            haptic()
+            return say("「$name」は、予定にありません。想定外として記録しました。" + if (first) "" else "（記録済み）", false)
+        }
         // 別の階の備品は、位置の目印にしない（座標が別）。確かめることだけはできる
         val otherFloor = floor != null && placed.floor != floor
         val already = ref.token in confirmed
-        val pos = if (engine.hasReference() && !otherFloor) engine.mapAt(pose) else null
-        val gapText = if (pos != null && !l.lostTracking) "　登録位置との差：%.2f m".format(hypot(pos.first - placed.x, pos.second - placed.y)) else ""
-        // 備品を読むたびに、その場所を目印に、位置と向きを合わせ直す（前の目印から2m以上歩いていれば、向きも直る）
-        val fixNote = if (engine.hasReference() && !otherFloor) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
+        val gap = if (posNow != null && !otherFloor) hypot(posNow.first - placed.x, posNow.second - placed.y) else null
+        val isMoved = otherFloor || (gap != null && gap >= MOVED_THRESHOLD_M)
+        updateMoved(
+            if (isMoved) moved + (ref.token to MovedAt(ref.token, floor ?: placed.floor, posNow?.first, posNow?.second))
+            else moved - ref.token,
+        )
+        val gapText = if (gap != null) "　登録位置との差：%.2f m".format(gap) else ""
+        val movedText = when {
+            !isMoved -> ""
+            otherFloor -> "\n登録は${placed.floor}階です。場所違いとして記録しました。"
+            else -> "\n登録位置から %.1f m 以上離れています。場所違いとして記録しました。".format(MOVED_THRESHOLD_M)
+        }
+        // 備品を読むたびに、その場所を目印に、位置と向きを合わせ直す（前の目印から2m以上歩いていれば、向きも直る）。場所違いは、目印にしない
+        val fixNote = if (engine.hasReference() && !otherFloor && !isMoved) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
         haptic()
         val wasRoute = routeMode
         confirm(ref.token, placed.x, placed.y)
         val left = floorItems.count { it.token !in confirmed }
         val next = if (wasRoute) route.firstOrNull() else null
         say(
-            (if (already) "「$name」は、確かめ済みです。" else "「$name」を確かめました。") + gapText +
+            (if (already) "「$name」は、確かめ済みです。" else "「$name」を確かめました。") + gapText + movedText +
                 (if (fixNote != null) "\n$fixNote" else "") +
                 when {
                     left == 0 -> "\nすべての備品を確かめました。棚卸は完了です。"

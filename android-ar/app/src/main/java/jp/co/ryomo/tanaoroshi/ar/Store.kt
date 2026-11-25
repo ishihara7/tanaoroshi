@@ -4,7 +4,21 @@ import android.content.Context
 import org.json.JSONObject
 
 /** 登録した備品の位置（フロア図上。x：東、y：北。単位はm）と、その誤差の見積もり。 */
-data class Placed(val name: String, val x: Double, val y: Double, val errM: Double, val floor: Int = 1)
+data class Placed(
+    val name: String, val x: Double, val y: Double, val errM: Double, val floor: Int = 1,
+    /** 位置が分かっているか。想定外を、位置が取れないまま読んだときは false（階だけ分かる） */
+    val located: Boolean = true,
+    /** 前回の棚卸で、確かめられなかった */
+    val missedLast: Boolean = false,
+    /** 前回の棚卸で、予定にないのに読まれた */
+    val wasUnexpected: Boolean = false,
+)
+
+/** 棚卸で、予定にないのに読んだ備品。位置が取れなければ x・y は null。 */
+data class Unexpected(val token: String, val name: String, val floor: Int, val x: Double?, val y: Double?)
+
+/** 棚卸で、予定と違う場所（階・位置）で読んだ備品。位置が取れなければ x・y は null。 */
+data class MovedAt(val token: String, val floor: Int, val x: Double?, val y: Double?)
 
 /** 階の表示。アンカーの記号つき（1階＝A、2階＝B、3階＝C）。 */
 fun floorLabel(floor: Int): String = "${floor}階（${"ABC".getOrElse(floor - 1) { '?' }}）"
@@ -67,7 +81,10 @@ class Store(context: Context) {
             val json = JSONObject(prefs.getString("registry", "{}") ?: "{}")
             for (key in json.keys()) {
                 val o = json.getJSONObject(key)
-                out[key] = Placed(o.getString("name"), o.getDouble("x"), o.getDouble("y"), o.getDouble("errM"), o.optInt("floor", 1))
+                out[key] = Placed(
+                    o.getString("name"), o.getDouble("x"), o.getDouble("y"), o.getDouble("errM"), o.optInt("floor", 1),
+                    o.optBoolean("located", true), o.optBoolean("missedLast", false), o.optBoolean("wasUnexpected", false),
+                )
             }
         } catch (e: Exception) {
             // 読めなければ、空から始める
@@ -78,8 +95,52 @@ class Store(context: Context) {
     fun saveRegistry(reg: Map<String, Placed>) {
         val json = JSONObject()
         for ((k, p) in reg) {
-            json.put(k, JSONObject().put("name", p.name).put("x", p.x).put("y", p.y).put("errM", p.errM).put("floor", p.floor))
+            json.put(k, JSONObject().put("name", p.name).put("x", p.x).put("y", p.y).put("errM", p.errM).put("floor", p.floor)
+                .put("located", p.located).put("missedLast", p.missedLast).put("wasUnexpected", p.wasUnexpected))
         }
         prefs.edit().putString("registry", json.toString()).apply()
     }
+
+    /** 今回の棚卸で、予定にないのに読んだ備品と、予定と違う場所で読んだ備品。 */
+    fun loadUnexpected(): LinkedHashMap<String, Unexpected> {
+        val out = LinkedHashMap<String, Unexpected>()
+        try {
+            val json = JSONObject(prefs.getString("unexpected", "{}") ?: "{}")
+            for (k in json.keys()) {
+                val o = json.getJSONObject(k)
+                out[k] = Unexpected(k, o.getString("name"), o.getInt("floor"), o.optDoubleOrNull("x"), o.optDoubleOrNull("y"))
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    fun saveUnexpected(m: Map<String, Unexpected>) {
+        val json = JSONObject()
+        for ((k, u) in m) {
+            json.put(k, JSONObject().put("name", u.name).put("floor", u.floor).putOpt("x", u.x).putOpt("y", u.y))
+        }
+        prefs.edit().putString("unexpected", json.toString()).apply()
+    }
+
+    fun loadMoved(): LinkedHashMap<String, MovedAt> {
+        val out = LinkedHashMap<String, MovedAt>()
+        try {
+            val json = JSONObject(prefs.getString("moved", "{}") ?: "{}")
+            for (k in json.keys()) {
+                val o = json.getJSONObject(k)
+                out[k] = MovedAt(k, o.getInt("floor"), o.optDoubleOrNull("x"), o.optDoubleOrNull("y"))
+            }
+        } catch (e: Exception) {
+        }
+        return out
+    }
+
+    fun saveMoved(m: Map<String, MovedAt>) {
+        val json = JSONObject()
+        for ((k, v) in m) json.put(k, JSONObject().put("floor", v.floor).putOpt("x", v.x).putOpt("y", v.y))
+        prefs.edit().putString("moved", json.toString()).apply()
+    }
+
+    private fun JSONObject.optDoubleOrNull(key: String): Double? = if (has(key) && !isNull(key)) getDouble(key) else null
 }

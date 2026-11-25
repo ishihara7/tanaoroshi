@@ -217,8 +217,8 @@ private fun CameraOverlay(model: AppModel, ghost: Boolean) {
     val gx = l.mapX
     val gy = l.mapY
     val gb = l.bearing
-    if (ghost && gx != null && gy != null && gb != null && l.tracking && model.floorItems.isNotEmpty()) {
-        GhostMarkers(model.floorItems, model.confirmed, gx, gy, gb, model.targetToken)
+    if (ghost && gx != null && gy != null && gb != null && l.tracking && model.mapItems.isNotEmpty()) {
+        GhostMarkers(model.mapItems, model.confirmed, gx, gy, gb, model.targetToken)
     }
     Box(Modifier.fillMaxSize().padding(8.dp)) {
         if (l.mapX != null && l.mapY != null) {
@@ -354,14 +354,22 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
             model.floorItems.forEach {
                 AssetRow(
                     name = it.placed.name,
-                    detail = "%s　東%.1f m　北%.1f m".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y),
+                    detail = if (it.placed.located) "%s　東%.1f m　北%.1f m".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y)
+                    else "${floorLabel(it.placed.floor)}　位置は不明",
                     selected = it.token == model.targetToken,
                     onClick = { model.selectTarget(it.token) },
                 ) {
-                    if (it.token in model.confirmed) StatusBadge("確認済み", Tone.OK) else StatusBadge("未確認", Tone.WARN)
+                    Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        if (it.token in model.confirmed) StatusBadge("確認済み", Tone.OK) else StatusBadge("未確認", Tone.WARN)
+                        if (it.token in model.moved) StatusBadge("場所違い", Tone.ERROR)
+                        if (it.placed.missedLast && it.token !in model.confirmed) StatusBadge("前回未確認", Tone.WARN)
+                        if (it.placed.wasUnexpected) StatusBadge("前回 想定外", Tone.INFO)
+                    }
                 }
             }
         }
+
+        FinishPanel(model)
 
         // 案内（矢印・距離）
         val x = l.mapX
@@ -399,11 +407,11 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
                 }
             }
         }
-        if (x != null && y != null && b != null && model.floorItems.isNotEmpty()) {
+        if (x != null && y != null && b != null && model.mapItems.isNotEmpty()) {
             SectionLabel("ゴースト表示（上から見た図）")
             AppCard {
                 Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    GhostRadar(model.floorItems, model.confirmed, x, y, b, model.targetToken, model.route, Modifier.size(260.dp))
+                    GhostRadar(model.mapItems, model.confirmed, x, y, b, model.targetToken, model.route, Modifier.size(260.dp))
                     Text(
                         "上が、いま向いている方向。赤の点滅は、まだ確かめていない備品。緑は、確かめた備品。",
                         fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
@@ -551,6 +559,63 @@ private fun RoutePanel(model: AppModel) {
                 }
                 Spacer(Modifier.height(10.dp))
                 SecondaryButton("巡回をやめる") { model.stopRoute() }
+            }
+        }
+    }
+}
+
+
+// ---------------- 棚卸の結果と、終了 ----------------
+
+/** 今回の結果（確認済み・未確認・想定外・場所違い）と、「棚卸を終える」。終えると、今回の結果が次回の予定になる。 */
+@Composable
+private fun FinishPanel(model: AppModel) {
+    val cs = MaterialTheme.colorScheme
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val checked = model.items.count { it.token in model.confirmed }
+    val missed = model.items.size - checked
+    val movedItems = model.items.filter { it.token in model.moved }
+    SectionLabel("今回の結果")
+    AppCard {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                StatusBadge("確認済み $checked", Tone.OK)
+                StatusBadge("未確認 $missed", Tone.WARN)
+                StatusBadge("想定外 ${model.unexpected.size}", Tone.INFO)
+                StatusBadge("場所違い ${movedItems.size}", Tone.ERROR)
+            }
+            if (model.unexpected.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("想定外（予定にないのに読んだ）", fontSize = 13.sp, color = cs.onSurfaceVariant)
+                model.unexpected.values.forEach {
+                    Text("・${it.name}（${floorLabel(it.floor)}）" + if (it.x == null) "　位置は不明" else "", fontSize = 14.sp, color = cs.onSurface)
+                }
+            }
+            if (movedItems.isNotEmpty()) {
+                Spacer(Modifier.height(10.dp))
+                Text("場所違い（予定と違う階・位置で読んだ）", fontSize = 14.sp, color = cs.onSurfaceVariant)
+                movedItems.forEach {
+                    val m = model.moved.getValue(it.token)
+                    Text(
+                        "・${it.placed.name}：${floorLabel(it.placed.floor)} → ${floorLabel(m.floor)}",
+                        fontSize = 14.sp, color = cs.onSurface,
+                    )
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+            PrimaryButton("棚卸を終える", enabled = model.items.isNotEmpty()) {
+                AlertDialog.Builder(context)
+                    .setTitle("棚卸を終えますか？")
+                    .setMessage(
+                        "確認済み ${checked}件、未確認 ${missed}件、想定外 ${model.unexpected.size}件、場所違い ${movedItems.size}件。\n\n" +
+                            "今回の結果が、次回の予定になります。\n" +
+                            "・未確認の備品は、場所はそのままで「前回未確認」になります\n" +
+                            "・想定外の備品は、予定に加わります\n" +
+                            "・場所違いの備品は、読んだ場所に更新されます",
+                    )
+                    .setNegativeButton("やめる", null)
+                    .setPositiveButton("終える") { _, _ -> model.finishInventory() }
+                    .show()
             }
         }
     }
