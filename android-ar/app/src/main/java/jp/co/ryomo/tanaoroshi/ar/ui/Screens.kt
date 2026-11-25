@@ -216,8 +216,8 @@ private fun CameraOverlay(model: AppModel, ghost: Boolean) {
     val gx = l.mapX
     val gy = l.mapY
     val gb = l.bearing
-    if (ghost && gx != null && gy != null && gb != null && l.tracking && model.items.isNotEmpty()) {
-        GhostMarkers(model.items, model.confirmed, gx, gy, gb, model.targetToken)
+    if (ghost && gx != null && gy != null && gb != null && l.tracking && model.floorItems.isNotEmpty()) {
+        GhostMarkers(model.floorItems, model.confirmed, gx, gy, gb, model.targetToken)
     }
     Box(Modifier.fillMaxSize().padding(8.dp)) {
         if (l.mapX != null && l.mapY != null) {
@@ -292,8 +292,8 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val l = model.live
     val target = model.target()
-    val total = model.items.size
-    val checked = model.items.count { it.token in model.confirmed }
+    val total = model.floorItems.size
+    val checked = model.floorItems.count { it.token in model.confirmed }
     CameraShell(model, "棚卸", ghost = true, onCamera = onCamera) {
         // 進み具合
         AppCard {
@@ -337,9 +337,9 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
         RoutePanel(model)
 
         SectionLabel("備品の一覧（タップで、矢印と距離の案内）")
-        if (model.items.isEmpty()) Text("登録した備品がありません。備品登録モードで、先に登録してください。", fontSize = 14.sp, color = cs.onSurfaceVariant)
+        if (model.floorItems.isEmpty()) Text("登録した備品がありません。備品登録モードで、先に登録してください。", fontSize = 14.sp, color = cs.onSurfaceVariant)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            model.items.forEach {
+            model.floorItems.forEach {
                 AssetRow(
                     name = it.placed.name,
                     detail = "東%.1f m　北%.1f m".format(it.placed.x, it.placed.y),
@@ -387,11 +387,11 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
                 }
             }
         }
-        if (x != null && y != null && b != null && model.items.isNotEmpty()) {
+        if (x != null && y != null && b != null && model.floorItems.isNotEmpty()) {
             SectionLabel("ゴースト表示（上から見た図）")
             AppCard {
                 Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    GhostRadar(model.items, model.confirmed, x, y, b, model.targetToken, model.route, Modifier.size(260.dp))
+                    GhostRadar(model.floorItems, model.confirmed, x, y, b, model.targetToken, model.route, Modifier.size(260.dp))
                     Text(
                         "上が、いま向いている方向。赤の点滅は、まだ確かめていない備品。緑は、確かめた備品。",
                         fontSize = 12.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp),
@@ -414,10 +414,8 @@ fun SettingsScreen(model: AppModel) {
     val s = model.settings
     val context = LocalContext.current
     var facingA by remember { mutableStateOf(s.facingA.toString()) }
-    var useB by remember { mutableStateOf(s.useB) }
-    var bx by remember { mutableStateOf(s.bx.toString()) }
-    var by by remember { mutableStateOf(s.by.toString()) }
     var facingB by remember { mutableStateOf(s.facingB.toString()) }
+    var facingC by remember { mutableStateOf(s.facingC.toString()) }
     var camRot by remember { mutableStateOf(s.cameraRot.toString()) }
     var advanced by remember { mutableStateOf(false) }
 
@@ -431,26 +429,17 @@ fun SettingsScreen(model: AppModel) {
                 Text("設定", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
                 Spacer(Modifier.width(72.dp))
             }
-            SectionLabel("アンカーA")
-            Text("アンカーは、1つ（A）で使えます。アンカーAのQRは、Awest です。", fontSize = 14.sp, color = cs.onSurfaceVariant)
+            SectionLabel("アンカー（階ごと）")
+            Text("A＝1階、B＝2階、C＝3階。階を移ったら、その階のアンカーを読み直します。", fontSize = 14.sp, color = cs.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            NumberField("壁に正対する向き（°）", "北が0、東が90。分からなければ0のままで構いません", facingA) { facingA = it }
+            NumberField("1階（A）：壁に正対する向き（°）", "北が0、東が90。分からなければ0のままで構いません", facingA) { facingA = it }
+            NumberField("2階（B）：壁に正対する向き（°）", null, facingB) { facingB = it }
+            NumberField("3階（C）：壁に正対する向き（°）", null, facingC) { facingC = it }
 
             SectionLabel("詳細")
-            SecondaryButton(if (advanced) "詳細設定を閉じる" else "詳細設定（アンカーB・カメラ）を開く") { advanced = !advanced }
+            SecondaryButton(if (advanced) "詳細設定を閉じる" else "詳細設定（カメラ）を開く") { advanced = !advanced }
             if (advanced) {
                 Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text("アンカーBを使う", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                        Text("精度の確認や、広いフロアで、位置を合わせ直すときに使います。", fontSize = 13.sp, color = cs.onSurfaceVariant)
-                    }
-                    Switch(checked = useB, onCheckedChange = { useB = it })
-                }
-                Spacer(Modifier.height(8.dp))
-                NumberField("アンカーB：東へ（m）", "西はマイナス。Aを原点にした位置", bx) { bx = it }
-                NumberField("アンカーB：北へ（m）", "南はマイナス", by) { by = it }
-                NumberField("アンカーBの壁に正対する向き（°）", null, facingB) { facingB = it }
                 NumberField("カメラ映像の向きの強制", "-1は自動。映像が横向きや逆さのときだけ、0〜3を試す", camRot) { camRot = it }
             }
 
@@ -459,9 +448,8 @@ fun SettingsScreen(model: AppModel) {
                 fun num(t: String, d: Double) = t.toDoubleOrNull() ?: d
                 model.saveSettings(
                     Settings(
-                        bx = num(bx, s.bx), by = num(by, s.by),
-                        facingA = num(facingA, s.facingA), facingB = num(facingB, s.facingB),
-                        cameraRot = num(camRot, s.cameraRot.toDouble()).toInt().coerceIn(-1, 3), useB = useB,
+                        facingA = num(facingA, s.facingA), facingB = num(facingB, s.facingB), facingC = num(facingC, s.facingC),
+                        cameraRot = num(camRot, s.cameraRot.toDouble()).toInt().coerceIn(-1, 3),
                     ),
                 )
                 model.go(Screen.HOME)
@@ -512,7 +500,7 @@ private fun NumberField(label: String, hint: String?, value: String, onChange: (
 @Composable
 private fun RoutePanel(model: AppModel) {
     val cs = MaterialTheme.colorScheme
-    val unconfirmed = model.items.count { it.token !in model.confirmed }
+    val unconfirmed = model.floorItems.count { it.token !in model.confirmed }
     SectionLabel("棚卸し（巡回）")
     AppCard {
         Column(Modifier.fillMaxWidth().padding(16.dp)) {

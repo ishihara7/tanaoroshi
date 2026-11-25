@@ -14,6 +14,10 @@ private val ASSET_NAMES = mapOf(
     "Tnote01" to "会議室のノートPC",
     "Tproj01" to "プロジェクター",
     "Tmon01" to "モニター",
+    "Tpc01" to "デスクトップPC",
+    "Tprn01" to "プリンター",
+    "Tcab01" to "キャビネット",
+    "Twb01" to "ホワイトボード",
 )
 
 /** 見えている特徴点が、これ以下だと、壁や床ばかりと見なして警告する */
@@ -52,6 +56,14 @@ class AppModel(
     val items = mutableStateListOf<PlacedItem>().apply {
         store.loadRegistry().forEach { (k, v) -> add(PlacedItem(k, v)) }
     }
+
+    /** いまいる階。アンカーを読んだ階（読むまでは null）。階を移ったら、その階のアンカーを読み直す */
+    var floor by mutableStateOf<Int?>(null)
+        private set
+
+    /** いまの階の備品（階が分からないうちは、すべて）。ゴースト・巡回・進み具合は、これを対象にする */
+    val floorItems: List<PlacedItem>
+        get() = floor?.let { f -> items.filter { it.placed.floor == f } } ?: items.toList()
 
     /** 棚卸で、QRを読んで、実物を確かめた備品。それ以外は「未確認」のゴーストとして見える（端末に保存する） */
     var confirmed by mutableStateOf(store.loadConfirmed())
@@ -110,14 +122,14 @@ class AppModel(
         val l = engine.live
         val x = fromX ?: l.mapX ?: 0.0
         val y = fromY ?: l.mapY ?: 0.0
-        val pts = items.filter { it.token !in confirmed }.map { RoutePoint(it.token, it.placed.x, it.placed.y) }
+        val pts = floorItems.filter { it.token !in confirmed }.map { RoutePoint(it.token, it.placed.x, it.placed.y) }
         route = RoutePlanner.plan(x, y, pts)
         targetToken = route.firstOrNull()?.token
     }
 
     fun startRoute() {
         routeMode = true
-        val n = items.count { it.token !in confirmed }
+        val n = floorItems.count { it.token !in confirmed }
         routeTotal = n
         replan()
         if (n == 0) say("未確認の備品はありません。すべて確かめ済みです。")
@@ -177,6 +189,7 @@ class AppModel(
         items.clear()
         confirmed = emptySet()
         targetToken = null
+        floor = null
         stopRoute()
         settings = Settings()
         engine.rotationOverride = settings.cameraRot
@@ -204,8 +217,7 @@ class AppModel(
         if (ref.isAnchor) {
             val a = settings.anchors().find { it.token == ref.token }
                 ?: return say(
-                    if (ref.token == "Aeast") "アンカーBは、使わない設定です。アンカーAのQRを読んでください（Bは、設定の詳細で、使えるようにできます）。"
-                    else "このアンカー（${ref.token}）は、登録されていません。アンカーAのQR（Awest）を読んでください。",
+                    "このアンカー（${ref.token}）は、登録されていません。アンカーは、A（1階）・B（2階）・C（3階）です。",
                     false,
                 )
             val notes = mutableListOf<String>()
@@ -216,9 +228,13 @@ class AppModel(
                 val gap = hypot(before.first - a.x, before.second - a.y)
                 notes += "ARの推定と、アンカーの位置の差：%.2f m（%.0f m歩行）".format(gap, l.walkedM)
             }
+            val moved = floor != null && floor != a.floor
             engine.setReference(pose, a.x, a.y, a.facingDeg)
+            floor = a.floor
+            targetToken = null
+            if (routeMode) startRoute()
             haptic()
-            say((listOf("${a.name} に位置を合わせました。") + notes).joinToString("\n"))
+            say((listOf("${a.name} に位置を合わせました。" + if (moved) "${a.floor}階に移りました。" else "") + notes).joinToString("\n"))
             return
         }
 
@@ -240,24 +256,27 @@ class AppModel(
                     say("追跡が途切れていて、位置を信用できません。アンカー、または登録済みの備品のQRを読んで、位置を合わせ直してください。", false)
                 }
             }
-            register(ref.token, Placed(name, pos.first, pos.second, err))
+            val f = floor ?: 1
+            register(ref.token, Placed(name, pos.first, pos.second, err, f))
             haptic()
-            say("「$name」を登録しました（誤差 ±%.1f m）。".format(err))
+            say("「$name」を${f}階に登録しました（誤差 ±%.1f m）。".format(err))
             return
         }
 
         // 棚卸：備品のQRを読んだら、確かめた備品にする。アンカーを読む前でも、確かめることはできる
         val placed = items.firstOrNull { it.token == ref.token }?.placed
             ?: return say("「$name」は、登録されていません。備品登録モードで、登録してください。", false)
+        // 別の階の備品は、位置の目印にしない（座標が別）。確かめることだけはできる
+        val otherFloor = floor != null && placed.floor != floor
         val already = ref.token in confirmed
-        val pos = if (engine.hasReference()) engine.mapAt(pose) else null
+        val pos = if (engine.hasReference() && !otherFloor) engine.mapAt(pose) else null
         val gapText = if (pos != null && !l.lostTracking) "　登録位置との差：%.2f m".format(hypot(pos.first - placed.x, pos.second - placed.y)) else ""
         // 備品を読むたびに、その場所を目印に、位置と向きを合わせ直す（前の目印から2m以上歩いていれば、向きも直る）
-        val fixNote = if (engine.hasReference()) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
+        val fixNote = if (engine.hasReference() && !otherFloor) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
         haptic()
         val wasRoute = routeMode
         confirm(ref.token, placed.x, placed.y)
-        val left = items.count { it.token !in confirmed }
+        val left = floorItems.count { it.token !in confirmed }
         val next = if (wasRoute) route.firstOrNull() else null
         say(
             (if (already) "「$name」は、確かめ済みです。" else "「$name」を確かめました。") + gapText +
