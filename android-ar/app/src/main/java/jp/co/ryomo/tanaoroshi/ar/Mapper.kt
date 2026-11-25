@@ -83,6 +83,29 @@ const val FRAME_RESET_DEG = 20.0
 fun bearingAfterLoss(bearingBefore: Double, gyroAtLoss: Double, gyroNow: Double): Double =
     normalizeDeg(bearingBefore + signedDiffDeg(gyroNow - gyroAtLoss))
 
+/**
+ * 2つの目印の間を歩いたとき、ARで測った移動の向き（地図上の方位に直したもの）と、
+ * 目印の登録位置から求めた向きの差を、回転の補正量（度）として返す。
+ * 近すぎる・距離が合わない・差が大きすぎるときは、信用できないので null。
+ */
+fun rotationCorrectionDeg(
+    arBearing: Double, arDistM: Double,
+    fromX: Double, fromY: Double, toX: Double, toY: Double,
+): Double? {
+    val (mapDist, mapBearing) = distanceAndBearing(fromX, fromY, toX, toY)
+    if (mapDist < MIN_FIX_BASE_M || arDistM < MIN_FIX_BASE_M) return null
+    val ratio = arDistM / mapDist
+    if (ratio < 0.6 || ratio > 1.6) return null
+    val delta = signedDiffDeg(mapBearing - arBearing)
+    return if (Math.abs(delta) > MAX_FIX_DEG) null else delta
+}
+
+/** 向きを直すのに必要な、2つの目印の最小の間隔（m）。近いと、位置の誤差で向きが大きく狂う */
+const val MIN_FIX_BASE_M = 2.0
+
+/** 一度に直す向きの上限（度）。これより大きい食い違いは、目印の取り違えなどと見なす */
+const val MAX_FIX_DEG = 45.0
+
 /** 2点間の距離（m）と、方位（北を0°とした時計回り）。 */
 fun distanceAndBearing(fromX: Double, fromY: Double, toX: Double, toY: Double): Pair<Double, Double> {
     val dx = toX - fromX

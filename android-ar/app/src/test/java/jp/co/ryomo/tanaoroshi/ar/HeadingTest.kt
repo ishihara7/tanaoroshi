@@ -45,6 +45,16 @@ class HeadingTest {
     }
 
     @Test
+    fun 目印2つで_回転のずれを求める() {
+        // 地図では、真東へ4m。ARで測ると、東から15°ずれて（105°）、4m歩いた → 15°直す
+        assertEquals(-15.0, rotationCorrectionDeg(105.0, 4.0, 0.0, 0.0, 4.0, 0.0)!!, 1e-6)
+        // 近すぎる、距離が合わない、ずれが大きすぎる → 使わない
+        assertTrue(rotationCorrectionDeg(90.0, 1.0, 0.0, 0.0, 1.0, 0.0) == null)
+        assertTrue(rotationCorrectionDeg(90.0, 10.0, 0.0, 0.0, 4.0, 0.0) == null)
+        assertTrue(rotationCorrectionDeg(170.0, 4.0, 0.0, 0.0, 4.0, 0.0) == null)
+    }
+
+    @Test
     fun ジャイロの角が_360をまたいでも_回転量は正しい() {
         // 350° → 10° は、右へ20°
         assertEquals(110.0, bearingAfterLoss(90.0, 350.0, 10.0), eps)

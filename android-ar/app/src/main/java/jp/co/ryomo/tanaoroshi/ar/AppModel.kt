@@ -233,7 +233,7 @@ class AppModel(
                 // 追跡が途切れたあとは、位置を信用できない。登録済みの備品なら、それを目印に立て直す
                 val known = items.firstOrNull { it.token == ref.token }?.placed
                 return if (known != null) {
-                    engine.correctPosition(pose, known.x, known.y)
+                    engine.fixAtKnownPoint(pose, known.x, known.y)
                     haptic()
                     say("「$name」（登録済み）を目印に、位置を合わせ直しました。続けて、次の備品へ進めます。")
                 } else {
@@ -252,8 +252,8 @@ class AppModel(
         val already = ref.token in confirmed
         val pos = if (engine.hasReference()) engine.mapAt(pose) else null
         val gapText = if (pos != null && !l.lostTracking) "　登録位置との差：%.2f m".format(hypot(pos.first - placed.x, pos.second - placed.y)) else ""
-        // 追跡が途切れていたら、確かめた備品の場所を目印に、位置を合わせ直す
-        if (engine.hasReference() && l.lostTracking) engine.correctPosition(pose, placed.x, placed.y)
+        // 備品を読むたびに、その場所を目印に、位置と向きを合わせ直す（前の目印から2m以上歩いていれば、向きも直る）
+        val fixNote = if (engine.hasReference()) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
         haptic()
         val wasRoute = routeMode
         confirm(ref.token, placed.x, placed.y)
@@ -261,6 +261,7 @@ class AppModel(
         val next = if (wasRoute) route.firstOrNull() else null
         say(
             (if (already) "「$name」は、確かめ済みです。" else "「$name」を確かめました。") + gapText +
+                (if (fixNote != null) "\n$fixNote" else "") +
                 when {
                     left == 0 -> "\nすべての備品を確かめました。棚卸は完了です。"
                     next != null -> "\n次は「${items.firstOrNull { it.token == next.token }?.placed?.name}」へ。"

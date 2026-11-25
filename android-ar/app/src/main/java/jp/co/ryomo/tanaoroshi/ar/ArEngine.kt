@@ -108,6 +108,7 @@ class ArEngine(
     /** アンカーのQRを読んだ瞬間のカメラの位置と向きを、そのアンカーの座標に結びつける。 */
     fun setReference(pose: PoseSnapshot, anchorX: Double, anchorY: Double, thetaDeg: Double) {
         reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, anchorX, anchorY, thetaDeg)
+        fix = null
         walked = 0.0
         lost = false
     }
@@ -124,11 +125,45 @@ class ArEngine(
         lost = false
     }
 
+    /** 直前に位置を合わせた目印（登録済みの備品）：そのときのARの位置と、地図上の位置 */
+    private class Fix(val px: Double, val pz: Double, val x: Double, val y: Double)
+    private var fix: Fix? = null
+
+    /**
+     * 登録済みの備品のQRを読むたびに、位置と向きを合わせ直す。
+     * 位置：その備品の登録位置に合わせる。
+     * 向き：前回の目印から、ARで測った移動の向きと、地図上の向きの差で、回転を直す（目印が2つ以上あるとき）。
+     * @return 画面に出す補足（向きを直したときだけ）
+     */
+    fun fixAtKnownPoint(pose: PoseSnapshot, x: Double, y: Double): String? {
+        val old = reference ?: return null
+        var bearing = old.bearingOf(pose.fx, pose.fz)
+        var note: String? = null
+        val prev = fix
+        if (prev != null) {
+            val delta = rotationCorrectionDeg(
+                old.bearingOf(pose.px - prev.px, pose.pz - prev.pz),
+                hypot(pose.px - prev.px, pose.pz - prev.pz),
+                prev.x, prev.y, x, y,
+            )
+            if (delta != null) {
+                bearing = normalizeDeg(bearing + delta)
+                note = "向きを %.0f° 直しました。".format(delta)
+            }
+        }
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing)
+        fix = Fix(pose.px, pose.pz, x, y)
+        walked = 0.0
+        lost = false
+        return note
+    }
+
     fun hasReference(): Boolean = reference != null
 
     /** 位置合わせ（アンカーで合わせた基準）を、忘れる。データを全部消すときに使う。 */
     fun clearReference() {
         reference = null
+        fix = null
         walked = 0.0
         lost = false
     }
@@ -247,6 +282,7 @@ class ArEngine(
                 pausedSince = nowMs
                 pdr.begin()
                 lossBearing = reference?.bearingOf(lastFx, lastFz) ?: 0.0 // 途切れる前の方角
+                fix = null // 座標系が変わるかもしれないので、前回の目印は使わない
             }
             // 歩数とジャイロで橋渡しできる間は、位置を信用する。長く続いたときだけ、信用できないとする
             val limit = if (pdr.available) BRIDGE_MAX_MS else LOST_MS
