@@ -78,9 +78,17 @@ class AppModel(
         screen = s
     }
 
+    private var seenRecovery = 0
+
     fun tick() {
         live = engine.live
         hasRef = engine.hasReference()
+        // 追跡が戻ったときの、向きの補正の結果を知らせる（実機で、座標が変わるのかを確かめられるように）
+        val rc = engine.recoveryCount
+        if (rc != seenRecovery) {
+            seenRecovery = rc
+            if (screen == Screen.REGISTER || screen == Screen.INVENTORY) say(engine.recoveryNote)
+        }
     }
 
     fun say(text: String, ok: Boolean = true) {

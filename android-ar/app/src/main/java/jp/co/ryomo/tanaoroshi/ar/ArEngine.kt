@@ -22,6 +22,7 @@ import java.nio.FloatBuffer
 import java.util.concurrent.Executors
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import kotlin.math.abs
 import kotlin.math.hypot
 
 /** QRを読んだ瞬間の、カメラの位置と向き（ARの世界座標）。 */
@@ -58,6 +59,15 @@ class ArEngine(
         private set
 
     @Volatile private var reference: ArReference? = null
+
+    /** 追跡が途切れた瞬間の、フロア図上の方角（北を0°とした時計回り） */
+    private var lossBearing = 0.0
+
+    /** 追跡が戻ったときの、向きの補正の結果（画面に出す）。recoveryCount が増えるたびに、新しい */
+    @Volatile var recoveryNote = ""
+        private set
+    @Volatile var recoveryCount = 0
+        private set
 
     // GLスレッドの内部状態
     private var textureId = 0
@@ -236,6 +246,7 @@ class ArEngine(
             if (pausedSince == 0L) {
                 pausedSince = nowMs
                 pdr.begin()
+                lossBearing = reference?.bearingOf(lastFx, lastFz) ?: 0.0 // 途切れる前の方角
             }
             // 歩数とジャイロで橋渡しできる間は、位置を信用する。長く続いたときだけ、信用できないとする
             val limit = if (pdr.available) BRIDGE_MAX_MS else LOST_MS
@@ -255,19 +266,40 @@ class ArEngine(
             lastFx = f[0] / fh
             lastFz = f[2] / fh
         }
+        if (pausedSince != 0L && fh <= 0.2 && reference != null) {
+            // 復帰した直後に、カメラが真上や真下を向いている。向きが決まらないので、水平に向けるまで待つ
+            live = Live(false, "追跡が戻りました。向きを確かめるため、カメラを水平に向けてください。", null, null, null, walked, lost)
+            return
+        }
         if (pausedSince != 0L) {
             // 復帰。途切れていた間に歩いたぶんを、歩数とジャイロの見積もりで、位置に足す
             val lostSec = (nowMs - pausedSince) / 1000.0
             val (bdx, bdz, steps) = pdr.end()
             val ref0 = reference
             if (ref0 != null) {
-                if (!lost && steps > 0) {
+                // ARCoreは、追跡が途切れると、座標系ごとリセットすることがある。そのときは、ARの向きの基準も変わるので、
+                // 元の対応づけに、いまのARの向きを当てはめると、方角がずれる。ジャイロの向きとの食い違いで、見分ける。
+                val gyroNow = pdr.heading()
+                val gyroThen = pdr.headingAtBegin
+                val gyroOk = pdr.available && fh > 0.2 && !gyroNow.isNaN() && !gyroThen.isNaN() && !pdr.offset().isNaN()
+                val mismatch = if (gyroOk) yawMismatchDeg(arYawDeg(lastFx, lastFz), gyroNow, pdr.offset()) else null
+                val frameChanged = mismatch != null && abs(mismatch) > FRAME_RESET_DEG
+                if (!lost && (steps > 0 || frameChanged)) {
                     // 追跡が戻ったARの位置は、途切れた地点のあたりから再開する。そこに、進んだぶんを足した地点が、本当の位置
                     val (tx, ty) = ref0.toMap(lastX + bdx, lastZ + bdz)
-                    reference = ArReference(px, pz, lastFx, lastFz, tx, ty, ref0.bearingOf(lastFx, lastFz))
+                    // 座標系が変わっていたら、途切れる前の方角に、ジャイロが回った量を足す（ARの座標系には頼らない）
+                    val bearing = if (frameChanged) bearingAfterLoss(lossBearing, gyroThen, gyroNow)
+                    else ref0.bearingOf(lastFx, lastFz)
+                    reference = ArReference(px, pz, lastFx, lastFz, tx, ty, bearing)
                     walked += PdrBridge.distanceOf(bdx, bdz) * 0.15 + lostSec * 0.3
                 } else {
                     walked += lostSec * LOSS_PENALTY_M_PER_S
+                }
+                if (mismatch != null && lostSec > 1.0) {
+                    recoveryNote = if (frameChanged)
+                        "追跡が戻りました。ARの座標が変わっていたので、ジャイロで向きを直しました（食い違い %.0f°）。".format(abs(mismatch))
+                    else "追跡が戻りました。ARの座標は保たれていました（食い違い %.0f°）。".format(abs(mismatch))
+                    recoveryCount++
                 }
             }
             pausedSince = 0L

@@ -61,6 +61,28 @@ class ArReference(
 
 fun normalizeDeg(deg: Double): Double = ((deg % 360.0) + 360.0) % 360.0
 
+/** 角度の差を、-180〜180 にする。 */
+fun signedDiffDeg(deg: Double): Double {
+    val d = normalizeDeg(deg)
+    return if (d > 180.0) d - 360.0 else d
+}
+
+/**
+ * 追跡が戻ったとき、ARCoreの座標系が変わったか（リセットされたか）を調べる。
+ * 追跡できている間は、ARの向きとジャイロの向きの差（offset）が一定に保たれる。
+ * 復帰後にその差が大きく変わっていたら、座標系が変わったと見なす。
+ * @return 食い違い（度、-180〜180）
+ */
+fun yawMismatchDeg(arYawNow: Double, gyroNow: Double, offset: Double): Double =
+    signedDiffDeg(arYawNow - (gyroNow + offset))
+
+/** 座標系が変わったとみなす、向きの食い違い（度）。ジャイロのドリフト（数十秒で数度）より、十分大きく取る */
+const val FRAME_RESET_DEG = 20.0
+
+/** 途切れる前の方角に、途切れている間にジャイロが回った量を足して、いまの方角にする。ARCoreの座標系には頼らない。 */
+fun bearingAfterLoss(bearingBefore: Double, gyroAtLoss: Double, gyroNow: Double): Double =
+    normalizeDeg(bearingBefore + signedDiffDeg(gyroNow - gyroAtLoss))
+
 /** 2点間の距離（m）と、方位（北を0°とした時計回り）。 */
 fun distanceAndBearing(fromX: Double, fromY: Double, toX: Double, toY: Double): Pair<Double, Double> {
     val dx = toX - fromX

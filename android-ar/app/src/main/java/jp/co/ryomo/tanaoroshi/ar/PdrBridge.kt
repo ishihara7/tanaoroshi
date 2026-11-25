@@ -40,6 +40,16 @@ class PdrBridge(context: Context) : SensorEventListener {
     private var prev2 = 0.0
     private var lastStepAt = 0L
 
+    /** 途切れた瞬間の、ジャイロの向き */
+    @Volatile var headingAtBegin = Double.NaN
+        private set
+
+    /** いまのジャイロの向き（NaN：まだ取れていない） */
+    fun heading(): Double = headingDeg
+
+    /** ARの向きと、ジャイロの向きの差（追跡できている間の最後の値） */
+    fun offset(): Double = offsetDeg
+
     /** 使えるセンサーがあるか */
     var available = false
         private set
@@ -66,6 +76,7 @@ class PdrBridge(context: Context) : SensorEventListener {
     /** 追跡が途切れた瞬間に呼ぶ。 */
     fun begin() {
         synchronized(lock) { dx = 0.0; dz = 0.0; steps = 0 }
+        headingAtBegin = headingDeg
         bridging = !offsetDeg.isNaN()
     }
 
