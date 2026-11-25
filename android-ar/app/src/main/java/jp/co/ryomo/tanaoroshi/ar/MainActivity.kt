@@ -27,7 +27,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import jp.co.ryomo.tanaoroshi.ar.ui.CameraRect
 import jp.co.ryomo.tanaoroshi.ar.ui.HomeScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.RegisterScreen
-import jp.co.ryomo.tanaoroshi.ar.ui.SearchScreen
+import jp.co.ryomo.tanaoroshi.ar.ui.InventoryScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.SettingsScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.TanaoroshiTheme
 
@@ -129,7 +129,7 @@ private fun AppRoot(model: AppModel, glView: GLSurfaceView) {
         when (model.screen) {
             Screen.HOME -> HomeScreen(model)
             Screen.REGISTER -> RegisterScreen(model) { cam = it }
-            Screen.SEARCH -> SearchScreen(model) { cam = it }
+            Screen.INVENTORY -> InventoryScreen(model) { cam = it }
             Screen.SETTINGS -> SettingsScreen(model)
         }
     }

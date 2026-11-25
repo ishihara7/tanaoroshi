@@ -50,6 +50,18 @@ class Store(context: Context) {
             .apply()
     }
 
+    /** 棚卸で、QRを読んで確かめた備品（トークン）。 */
+    fun loadConfirmed(): Set<String> = prefs.getStringSet("confirmed", emptySet())?.toSet() ?: emptySet()
+
+    fun saveConfirmed(tokens: Set<String>) {
+        prefs.edit().putStringSet("confirmed", tokens).apply()
+    }
+
+    /** この端末のデータを、すべて消す（備品・棚卸の進み具合・設定）。 */
+    fun clearAll() {
+        prefs.edit().clear().apply()
+    }
+
     fun loadRegistry(): LinkedHashMap<String, Placed> {
         val out = LinkedHashMap<String, Placed>()
         try {

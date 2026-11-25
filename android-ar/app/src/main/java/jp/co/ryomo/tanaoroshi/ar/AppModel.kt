@@ -6,7 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.hypot
 
-enum class Screen { HOME, REGISTER, SEARCH, SETTINGS }
+/** HOME：モードの選択。REGISTER：備品登録モード。INVENTORY：棚卸モード。 */
+enum class Screen { HOME, REGISTER, INVENTORY, SETTINGS }
 
 /** 備品の名前（仮）。ここにないトークンは、トークンをそのまま名前にする。 */
 private val ASSET_NAMES = mapOf(
@@ -52,9 +53,14 @@ class AppModel(
         store.loadRegistry().forEach { (k, v) -> add(PlacedItem(k, v)) }
     }
 
-    /** このセッションで、QRを読んで、実物を確かめた備品（登録した直後も含む）。それ以外は「未確認」のゴースト */
-    var confirmed by mutableStateOf<Set<String>>(emptySet())
+    /** 棚卸で、QRを読んで、実物を確かめた備品。それ以外は「未確認」のゴーストとして見える（端末に保存する） */
+    var confirmed by mutableStateOf(store.loadConfirmed())
         private set
+
+    private fun updateConfirmed(tokens: Set<String>) {
+        confirmed = tokens
+        store.saveConfirmed(tokens)
+    }
 
     /** 巡回モード：未確認の備品を、短い順路で、順に案内する */
     var routeMode by mutableStateOf(false)
@@ -114,14 +120,15 @@ class AppModel(
         route = emptyList()
     }
 
-    /** 確かめ直したい（全部を、未確認に戻す） */
+    /** 棚卸を、最初からやり直す（全部を、未確認に戻す） */
     fun resetConfirmed() {
-        confirmed = emptySet()
+        updateConfirmed(emptySet())
+        say("棚卸を、最初からやり直します。")
         if (routeMode) startRoute()
     }
 
     private fun confirm(token: String, atX: Double, atY: Double) {
-        confirmed = confirmed + token
+        updateConfirmed(confirmed + token)
         if (routeMode) {
             // 備品の場所に着いている。そこから、残りの順路を、作り直す
             replan(atX, atY)
@@ -147,18 +154,27 @@ class AppModel(
 
     fun removeItem(token: String) {
         items.removeAll { it.token == token }
-        confirmed = confirmed - token
+        updateConfirmed(confirmed - token)
         if (targetToken == token) targetToken = null
         if (routeMode) startRoute()
         persist()
     }
 
-    fun clearItems() {
+    /**
+     * この端末のデータを、すべて消して、初めて使うときの状態に戻す。
+     * 備品、棚卸の進み具合、設定、アンカーで合わせた位置、が対象。
+     */
+    fun clearAllData() {
+        store.clearAll()
         items.clear()
         confirmed = emptySet()
         targetToken = null
         stopRoute()
-        persist()
+        settings = Settings()
+        engine.rotationOverride = settings.cameraRot
+        engine.clearReference()
+        say("すべてのデータを消しました。", true)
+        screen = Screen.HOME
     }
 
     private fun persist() {
@@ -174,7 +190,7 @@ class AppModel(
     // ---------------- QR ----------------
 
     fun handleQr(text: String, pose: PoseSnapshot) {
-        if (screen != Screen.REGISTER && screen != Screen.SEARCH) return
+        if (screen != Screen.REGISTER && screen != Screen.INVENTORY) return
         val ref = parseTagUrl(text) ?: return say("このQRは、このアプリのタグではありません。", false)
 
         if (ref.isAnchor) {
@@ -198,13 +214,13 @@ class AppModel(
             return
         }
 
-        if (!engine.hasReference()) return say("先に、アンカーのQRを読み取ってください。", false)
-        val pos = engine.mapAt(pose) ?: return
         val l = engine.live
         val name = ASSET_NAMES[ref.token] ?: ref.token
-        val err = ErrorModel.estimate(l.walkedM)
 
         if (screen == Screen.REGISTER) {
+            if (!engine.hasReference()) return say("先に、アンカーのQRを読み取ってください。", false)
+            val pos = engine.mapAt(pose) ?: return
+            val err = ErrorModel.estimate(l.walkedM)
             if (l.lostTracking) {
                 // 追跡が途切れたあとは、位置を信用できない。登録済みの備品なら、それを目印に立て直す
                 val known = items.firstOrNull { it.token == ref.token }?.placed
@@ -217,25 +233,31 @@ class AppModel(
                 }
             }
             register(ref.token, Placed(name, pos.first, pos.second, err))
-            confirmed = confirmed + ref.token
             haptic()
             say("「$name」を登録しました（誤差 ±%.1f m）。".format(err))
-        } else {
-            val placed = items.firstOrNull { it.token == ref.token }?.placed
-                ?: return say("「$name」は、まだ登録されていません。", false)
-            val gap = hypot(pos.first - placed.x, pos.second - placed.y)
-            haptic()
-            val wasRoute = routeMode
-            confirm(ref.token, placed.x, placed.y)
-            val next = if (wasRoute) route.firstOrNull() else null
-            say(
-                "「$name」を確かめました。登録位置との差：%.2f m".format(gap) +
-                    when {
-                        !wasRoute -> ""
-                        next != null -> "\n次は「${items.firstOrNull { it.token == next.token }?.placed?.name}」へ。"
-                        else -> "\nすべての備品を確かめました。"
-                    },
-            )
+            return
         }
+
+        // 棚卸：備品のQRを読んだら、確かめた備品にする。アンカーを読む前でも、確かめることはできる
+        val placed = items.firstOrNull { it.token == ref.token }?.placed
+            ?: return say("「$name」は、登録されていません。備品登録モードで、登録してください。", false)
+        val already = ref.token in confirmed
+        val pos = if (engine.hasReference()) engine.mapAt(pose) else null
+        val gapText = if (pos != null && !l.lostTracking) "　登録位置との差：%.2f m".format(hypot(pos.first - placed.x, pos.second - placed.y)) else ""
+        // 追跡が途切れていたら、確かめた備品の場所を目印に、位置を合わせ直す
+        if (engine.hasReference() && l.lostTracking) engine.correctPosition(pose, placed.x, placed.y)
+        haptic()
+        val wasRoute = routeMode
+        confirm(ref.token, placed.x, placed.y)
+        val left = items.count { it.token !in confirmed }
+        val next = if (wasRoute) route.firstOrNull() else null
+        say(
+            (if (already) "「$name」は、確かめ済みです。" else "「$name」を確かめました。") + gapText +
+                when {
+                    left == 0 -> "\nすべての備品を確かめました。棚卸は完了です。"
+                    next != null -> "\n次は「${items.firstOrNull { it.token == next.token }?.placed?.name}」へ。"
+                    else -> "\n残り ${left}件。"
+                },
+        )
     }
 }

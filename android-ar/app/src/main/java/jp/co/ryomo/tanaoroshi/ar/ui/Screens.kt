@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -77,7 +78,7 @@ fun HomeScreen(model: AppModel) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text("備品の位置", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = cs.onBackground)
-                    Text("歩いて登録し、矢印で探す", fontSize = 14.sp, color = cs.onSurfaceVariant)
+                    Text("備品を登録し、棚卸で確かめる", fontSize = 14.sp, color = cs.onSurfaceVariant)
                 }
                 TextButton(onClick = { model.go(Screen.SETTINGS) }) { Text("設定", fontSize = 16.sp) }
             }
@@ -101,18 +102,23 @@ fun HomeScreen(model: AppModel) {
             Spacer(Modifier.height(16.dp))
 
             ActionCard(
-                title = "登録する",
+                title = "備品登録モード",
                 body = "アンカーのQR → 備品のQR の順に読んで、備品の位置を記録します。",
                 primary = true,
                 enabled = true,
             ) { model.go(Screen.REGISTER) }
             Spacer(Modifier.height(12.dp))
+            val checked = model.items.count { it.token in model.confirmed }
             ActionCard(
-                title = "探す",
-                body = if (model.items.isEmpty()) "先に、備品を登録してください。" else "備品を選ぶと、矢印と距離で案内します。",
+                title = "棚卸モード",
+                body = when {
+                    model.items.isEmpty() -> "先に、備品を登録してください。"
+                    checked == 0 -> "備品のQRを読んで、確かめます。読んでいない備品は、ゴーストで見えます。"
+                    else -> "確かめ済み $checked / ${model.items.size} 件。続きから再開します。"
+                },
                 primary = false,
                 enabled = model.items.isNotEmpty(),
-            ) { model.go(Screen.SEARCH) }
+            ) { model.go(Screen.INVENTORY) }
 
             if (model.items.isNotEmpty()) {
                 SectionLabel("最近の登録")
@@ -154,6 +160,7 @@ private fun ActionCard(title: String, body: String, primary: Boolean, enabled: B
 private fun CameraShell(
     model: AppModel,
     title: String,
+    ghost: Boolean,
     onCamera: (CameraRect) -> Unit,
     content: @Composable () -> Unit,
 ) {
@@ -178,7 +185,7 @@ private fun CameraShell(
                         val p = it.positionInRoot()
                         onCamera(CameraRect(p.x.toInt(), p.y.toInt(), it.size.width, it.size.height))
                     },
-                ) { CameraOverlay(model) }
+                ) { CameraOverlay(model, ghost) }
                 Box(Modifier.weight(1f).fillMaxHeight().background(cs.background))
             }
             Box(Modifier.weight(1f).fillMaxWidth().background(cs.background), contentAlignment = Alignment.TopCenter) {
@@ -204,12 +211,12 @@ private fun TrackingBadge(model: AppModel) {
 
 /** カメラ映像の上に重ねる情報（歩いた距離・特徴点の警告）。 */
 @Composable
-private fun CameraOverlay(model: AppModel) {
+private fun CameraOverlay(model: AppModel, ghost: Boolean) {
     val l = model.live
     val gx = l.mapX
     val gy = l.mapY
     val gb = l.bearing
-    if (gx != null && gy != null && gb != null && l.tracking && model.items.isNotEmpty()) {
+    if (ghost && gx != null && gy != null && gb != null && l.tracking && model.items.isNotEmpty()) {
         GhostMarkers(model.items, model.confirmed, gx, gy, gb, model.targetToken)
     }
     Box(Modifier.fillMaxSize().padding(8.dp)) {
@@ -248,13 +255,13 @@ private fun TrackingNote(model: AppModel) {
 
 @Composable
 fun RegisterScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
-    CameraShell(model, "登録", onCamera) {
+    CameraShell(model, "備品登録", ghost = false, onCamera = onCamera) {
         Stepper(
             steps = listOf(
                 "アンカーのQRを、壁に向かって正対して読む",
                 "歩いて、備品に近づく",
                 "備品のQRを読む（そのときの位置が登録される）",
-                "次の備品へ。全部終わったら「完了して、探す」",
+                "次の備品へ。全部終わったら「完了して、棚卸へ」",
             ),
             current = if (!model.hasRef) 0 else 1,
         )
@@ -274,34 +281,63 @@ fun RegisterScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
             }
         }
         Spacer(Modifier.height(16.dp))
-        PrimaryButton("完了して、探す", enabled = model.items.isNotEmpty()) { model.go(Screen.SEARCH) }
+        PrimaryButton("完了して、棚卸へ", enabled = model.items.isNotEmpty()) { model.go(Screen.INVENTORY) }
     }
 }
 
-// ---------------- 探す ----------------
+// ---------------- 棚卸 ----------------
 
 @Composable
-fun SearchScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
+fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
     val cs = MaterialTheme.colorScheme
     val l = model.live
     val target = model.target()
-    CameraShell(model, "探す", onCamera) {
+    val total = model.items.size
+    val checked = model.items.count { it.token in model.confirmed }
+    CameraShell(model, "棚卸", ghost = true, onCamera = onCamera) {
+        // 進み具合
+        AppCard {
+            Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                Row(verticalAlignment = Alignment.Bottom) {
+                    Text("$checked", fontSize = 36.sp, fontWeight = FontWeight.Bold, color = if (checked == total && total > 0) LocalStatusColors.current.success else cs.primary)
+                    Text(" / $total 件 確認済み", fontSize = 16.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 6.dp).weight(1f))
+                    if (checked > 0) TextButton(onClick = { model.resetConfirmed() }) { Text("最初から") }
+                }
+                Spacer(Modifier.height(6.dp))
+                LinearProgressIndicator(
+                    progress = { if (total == 0) 0f else checked.toFloat() / total },
+                    modifier = Modifier.fillMaxWidth().height(8.dp),
+                    color = if (checked == total && total > 0) LocalStatusColors.current.success else cs.primary,
+                    trackColor = cs.surfaceVariant,
+                )
+                if (checked == total && total > 0) {
+                    Spacer(Modifier.height(8.dp))
+                    StatusBadge("棚卸は完了です", Tone.OK)
+                }
+            }
+        }
+        Spacer(Modifier.height(12.dp))
         Stepper(
             steps = listOf(
-                "アンカーのQRを読んで、位置を合わせる",
-                "探す備品を、下から選ぶ",
-                "矢印の向きに歩く（距離が減っていく）",
-                "着いたら、備品のQRを読んで確かめる",
+                "アンカーのQRを読んで、位置を合わせる（ゴーストが見えるようになる）",
+                "備品のQRを、1つずつ読む（読んだ備品は緑になる）",
+                "赤く点滅するゴースト（未確認）の場所へ歩く",
+                "すべて緑になれば、棚卸は完了",
             ),
-            current = if (!model.hasRef) 0 else if (model.targetToken == null) 1 else 2,
+            current = when {
+                total > 0 && checked == total -> 3
+                !model.hasRef -> 0
+                checked == 0 -> 1
+                else -> 2
+            },
         )
         TrackingNote(model)
         MessageBanner(model.message, model.messageOk, Modifier.padding(top = 8.dp))
 
         RoutePanel(model)
 
-        SectionLabel("探す備品")
-        if (model.items.isEmpty()) Text("登録した備品がありません。", fontSize = 14.sp, color = cs.onSurfaceVariant)
+        SectionLabel("備品の一覧（タップで、矢印と距離の案内）")
+        if (model.items.isEmpty()) Text("登録した備品がありません。備品登録モードで、先に登録してください。", fontSize = 14.sp, color = cs.onSurfaceVariant)
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             model.items.forEach {
                 AssetRow(
@@ -342,7 +378,7 @@ fun SearchScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Text(
                         when {
-                            target == null -> "探す備品を選んでください。"
+                            target == null -> "一覧から備品を選ぶと、矢印で案内します。"
                             x == null -> "アンカーのQRを読み取ってください。"
                             else -> "追跡できていません。"
                         },
@@ -364,7 +400,7 @@ fun SearchScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
             }
         }
         Text(
-            "位置がずれたら、アンカーのQRを読み直してください。備品に着いたら、そのQRを読むと、登録位置との差を確かめられます。",
+            "位置がずれたら、アンカーのQRを読み直してください。備品のQRを読むと、その備品が確かめ済みになります。",
             fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 12.dp),
         )
     }
@@ -431,12 +467,23 @@ fun SettingsScreen(model: AppModel) {
                 model.go(Screen.HOME)
             }
             Spacer(Modifier.height(12.dp))
-            DangerButton("登録した備品を、すべて消す（${model.items.size}件）", enabled = model.items.isNotEmpty()) {
+            SectionLabel("データ")
+            Text(
+                "試用で入れたデータを、まとめて消して、初めて使うときの状態に戻します。",
+                fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(bottom = 8.dp),
+            )
+            DangerButton("すべてのデータを消す") {
                 AlertDialog.Builder(context)
-                    .setTitle("登録した備品を消しますか？")
-                    .setMessage("この端末の登録が、すべて消えます。")
+                    .setTitle("すべてのデータを消しますか？")
+                    .setMessage(
+                        "この端末の、次のデータが消えます。元に戻せません。\n" +
+                            "・登録した備品（${model.items.size}件）\n" +
+                            "・棚卸の進み具合（確認済み ${model.confirmed.size}件）\n" +
+                            "・設定（アンカーの向きなど）\n" +
+                            "・アンカーで合わせた位置",
+                    )
                     .setNegativeButton("やめる", null)
-                    .setPositiveButton("消す") { _, _ -> model.clearItems() }
+                    .setPositiveButton("すべて消す") { _, _ -> model.clearAllData() }
                     .show()
             }
             Spacer(Modifier.height(24.dp))

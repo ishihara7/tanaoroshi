@@ -116,6 +116,13 @@ class ArEngine(
 
     fun hasReference(): Boolean = reference != null
 
+    /** 位置合わせ（アンカーで合わせた基準）を、忘れる。データを全部消すときに使う。 */
+    fun clearReference() {
+        reference = null
+        walked = 0.0
+        lost = false
+    }
+
     /** 現在位置を、フロア図上の座標にする（QRを読んだ時点のカメラの位置から）。 */
     fun mapAt(pose: PoseSnapshot): Pair<Double, Double>? = reference?.toMap(pose.px, pose.pz)
 
