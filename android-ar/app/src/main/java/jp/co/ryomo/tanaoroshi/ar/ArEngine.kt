@@ -73,6 +73,7 @@ class ArEngine(
     private var lastFx = 0.0
     private var lastFz = -1.0
     private var pausedSince = 0L
+    private val pdr = PdrBridge(activity)
     /** 確認用：ARCoreに伝える画面の向き（0〜3）を、強制する。-1なら、本来の値を使う */
     @Volatile var rotationOverride = -1
         set(value) {
@@ -145,6 +146,7 @@ class ArEngine(
         }
         return try {
             session?.resume()
+            pdr.start()
             null
         } catch (e: Exception) {
             session = null
@@ -154,6 +156,7 @@ class ArEngine(
 
     fun pause() {
         session?.pause()
+        pdr.stop()
     }
 
     // ---------------- GLSurfaceView.Renderer ----------------
@@ -223,18 +226,18 @@ class ArEngine(
         val nowMs = System.currentTimeMillis()
         if (camera.trackingState != TrackingState.TRACKING) {
             hasLast = false
-            if (pausedSince == 0L) pausedSince = nowMs
-            // 短い途切れは、ARCoreが自分で復帰することが多い。長く続いたときだけ、位置を信用できないとする
-            if (reference != null && nowMs - pausedSince > LOST_MS) lost = true
-            live = Live(false, "追跡できていません（${reasonText(camera.trackingFailureReason)}）",
+            if (pausedSince == 0L) {
+                pausedSince = nowMs
+                pdr.begin()
+            }
+            // 歩数とジャイロで橋渡しできる間は、位置を信用する。長く続いたときだけ、信用できないとする
+            val limit = if (pdr.available) BRIDGE_MAX_MS else LOST_MS
+            if (reference != null && nowMs - pausedSince > limit) lost = true
+            val bridgeNote = if (reference != null && pdr.available && !lost)
+                "\n歩数で補っています：${pdr.stepsSoFar()}歩" else ""
+            live = Live(false, "追跡できていません（${reasonText(camera.trackingFailureReason)}）$bridgeNote",
                 null, null, null, walked, lost)
             return
-        }
-        if (pausedSince != 0L) {
-            // 復帰。途切れていた間は、ずれがたまるので、誤差の見積もりに、時間ぶんを足す
-            val lostSec = (nowMs - pausedSince) / 1000.0
-            if (reference != null) walked += lostSec * LOSS_PENALTY_M_PER_S
-            pausedSince = 0L
         }
         val pose = camera.pose
         val px = pose.tx().toDouble()
@@ -245,6 +248,24 @@ class ArEngine(
             lastFx = f[0] / fh
             lastFz = f[2] / fh
         }
+        if (pausedSince != 0L) {
+            // 復帰。途切れていた間に歩いたぶんを、歩数とジャイロの見積もりで、位置に足す
+            val lostSec = (nowMs - pausedSince) / 1000.0
+            val (bdx, bdz, steps) = pdr.end()
+            val ref0 = reference
+            if (ref0 != null) {
+                if (!lost && steps > 0) {
+                    // 追跡が戻ったARの位置は、途切れた地点のあたりから再開する。そこに、進んだぶんを足した地点が、本当の位置
+                    val (tx, ty) = ref0.toMap(lastX + bdx, lastZ + bdz)
+                    reference = ArReference(px, pz, lastFx, lastFz, tx, ty, ref0.bearingOf(lastFx, lastFz))
+                    walked += PdrBridge.distanceOf(bdx, bdz) * 0.15 + lostSec * 0.3
+                } else {
+                    walked += lostSec * LOSS_PENALTY_M_PER_S
+                }
+            }
+            pausedSince = 0L
+        }
+        if (fh > 0.2) pdr.calibrate(arYawDeg(lastFx, lastFz))
 
         if (hasLast) {
             val step = hypot(px - lastX, pz - lastZ)
@@ -364,6 +385,8 @@ class ArEngine(
     companion object {
         /** これより長く追跡が途切れたら、位置を信用できないとして、アンカーの読み直しを求める（ミリ秒） */
         private const val LOST_MS = 3000L
+        /** 歩数とジャイロで橋渡しできる、途切れの長さの上限（ミリ秒）。これを超えたら、アンカーの読み直しを求める */
+        private const val BRIDGE_MAX_MS = 15000L
         /** 追跡が途切れていた1秒あたり、誤差の見積もりに足す距離（m） */
         private const val LOSS_PENALTY_M_PER_S = 1.0
         private const val VERTEX = """
