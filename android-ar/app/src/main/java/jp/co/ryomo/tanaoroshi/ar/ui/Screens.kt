@@ -50,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import jp.co.ryomo.tanaoroshi.ar.AppModel
 import jp.co.ryomo.tanaoroshi.ar.ErrorModel
 import jp.co.ryomo.tanaoroshi.ar.LOW_POINTS
+import jp.co.ryomo.tanaoroshi.ar.LabelMode
 import jp.co.ryomo.tanaoroshi.ar.Screen
 import jp.co.ryomo.tanaoroshi.ar.Settings
 import jp.co.ryomo.tanaoroshi.ar.SyncState
@@ -264,7 +265,7 @@ private fun CameraOverlay(model: AppModel, ghost: Boolean) {
     val gy = l.mapY
     val gb = l.bearing
     if (ghost && gx != null && gy != null && gb != null && l.tracking && model.mapItems.isNotEmpty()) {
-        GhostMarkers(model.mapItems, model.confirmed, gx, gy, gb, model.targetToken)
+        GhostMarkers(model.mapItems, model.confirmed, gx, gy, gb, model.targetToken, model.labelMode)
     }
     Box(Modifier.fillMaxSize().padding(8.dp)) {
         if (l.mapX != null && l.mapY != null) {
@@ -278,6 +279,18 @@ private fun CameraOverlay(model: AppModel, ghost: Boolean) {
         }
         if (l.tracking && l.points in 0..LOW_POINTS) {
             StatusBadge("特徴が少ない", Tone.WARN, Modifier.align(Alignment.TopStart))
+        }
+        // ゴーストの札の表示を、名称と管理番号で切り替える（タップ）
+        if (ghost) {
+            Text(
+                "札：" + if (model.labelMode == LabelMode.NAME) "名称" else "管理番号",
+                modifier = Modifier.align(Alignment.BottomEnd)
+                    .background(androidx.compose.ui.graphics.Color(0x99000000), MaterialTheme.shapes.small)
+                    .clickable { model.toggleLabelMode() }
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                color = androidx.compose.ui.graphics.Color.White,
+                fontSize = 13.sp, fontWeight = FontWeight.Bold,
+            )
         }
         // いまの階（アンカーを読むと決まる）
         val f = model.floor

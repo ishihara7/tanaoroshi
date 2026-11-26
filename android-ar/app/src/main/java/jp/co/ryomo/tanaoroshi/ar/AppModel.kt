@@ -48,6 +48,15 @@ class AppModel(
     var serverAnchors by mutableStateOf(store.loadAnchors())
         private set
 
+    /** ARのゴースト（カメラ映像の上の札）に、名称と管理番号の、どちらを出すか */
+    var labelMode by mutableStateOf(store.loadLabelMode())
+        private set
+
+    fun toggleLabelMode() {
+        labelMode = if (labelMode == LabelMode.NAME) LabelMode.ASSET_NO else LabelMode.NAME
+        store.saveLabelMode(labelMode)
+    }
+
     /** 台帳の備品（タグのトークン → 管理番号・名称）。台帳にないタグは、管理対象外で、登録できない */
     var ledger by mutableStateOf(store.loadLedger().associateBy { it.token })
         private set

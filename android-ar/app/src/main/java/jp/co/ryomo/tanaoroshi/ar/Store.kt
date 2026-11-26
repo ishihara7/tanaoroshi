@@ -16,6 +16,12 @@ data class Placed(
     val assetNo: String? = null,
 )
 
+/** ARのゴースト（カメラ映像の上の札）に出す文字。NAME：名称／ASSET_NO：管理番号。 */
+enum class LabelMode { NAME, ASSET_NO }
+
+/** ゴーストの札に出す文字。管理番号の表示で、管理番号がない備品（台帳にない）は、名称を出す。 */
+fun Placed.shortLabel(mode: LabelMode): String = if (mode == LabelMode.ASSET_NO) assetNo ?: name else name
+
 /** 一覧に出す名前。台帳の管理番号があれば、「管理番号　名称」。 */
 fun Placed.label(): String = assetNo?.let { "$it　$name" } ?: name
 
@@ -159,6 +165,13 @@ class Store(context: Context) : SyncStorage {
             a.put(JSONObject().put("token", it.token).put("name", it.name).put("floor", it.floor).put("x", it.xM).put("y", it.yM).putOpt("facing", it.facingDeg))
         }
         prefs.edit().putString("anchors", a.toString()).apply()
+    }
+
+    /** ゴーストの札の表示（名称／管理番号）。 */
+    fun loadLabelMode(): LabelMode = if (prefs.getString("labelMode", "NAME") == "ASSET_NO") LabelMode.ASSET_NO else LabelMode.NAME
+
+    fun saveLabelMode(mode: LabelMode) {
+        prefs.edit().putString("labelMode", mode.name).apply()
     }
 
     /** この端末のデータを、すべて消す（備品・棚卸の進み具合・設定）。 */

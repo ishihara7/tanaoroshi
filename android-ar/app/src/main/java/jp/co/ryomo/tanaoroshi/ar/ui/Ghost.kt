@@ -28,6 +28,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import jp.co.ryomo.tanaoroshi.ar.PlacedItem
 import jp.co.ryomo.tanaoroshi.ar.distanceAndBearing
+import jp.co.ryomo.tanaoroshi.ar.shortLabel
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
@@ -65,6 +66,7 @@ fun GhostMarkers(
     items: List<PlacedItem>, confirmed: Set<String>,
     x: Double, y: Double, headingDeg: Double,
     targetToken: String?,
+    labelMode: jp.co.ryomo.tanaoroshi.ar.LabelMode = jp.co.ryomo.tanaoroshi.ar.LabelMode.NAME,
     modifier: Modifier = Modifier,
 ) {
     val sc = LocalStatusColors.current
@@ -90,7 +92,7 @@ fun GhostMarkers(
                     .padding(horizontal = (6 + 6 * near).dp, vertical = (3 + 3 * near).dp),
             ) {
                 Text(
-                    (if (isTarget) "★ " else "") + s.item.placed.name + "  %.0f m".format(s.distM),
+                    (if (isTarget) "★ " else "") + s.item.placed.shortLabel(labelMode) + "  %.0f m".format(s.distM),
                     color = Color.White, fontSize = (10 + 3 * near).sp, fontWeight = FontWeight.Bold,
                 )
             }
