@@ -42,6 +42,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -51,6 +52,8 @@ import jp.co.ryomo.tanaoroshi.ar.ErrorModel
 import jp.co.ryomo.tanaoroshi.ar.LOW_POINTS
 import jp.co.ryomo.tanaoroshi.ar.Screen
 import jp.co.ryomo.tanaoroshi.ar.Settings
+import jp.co.ryomo.tanaoroshi.ar.SyncState
+import jp.co.ryomo.tanaoroshi.ar.SyncStatus
 import jp.co.ryomo.tanaoroshi.ar.compassLabel
 import jp.co.ryomo.tanaoroshi.ar.distanceAndBearing
 import jp.co.ryomo.tanaoroshi.ar.floorLabel
@@ -100,6 +103,8 @@ fun HomeScreen(model: AppModel) {
                     )
                 }
             }
+            Spacer(Modifier.height(12.dp))
+            SyncPanel(model)
             Spacer(Modifier.height(16.dp))
 
             ActionCard(
@@ -347,6 +352,7 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
         MessageBanner(model.message, model.messageOk, Modifier.padding(top = 8.dp))
 
         RoutePanel(model)
+        ManualPanel(model)
 
         SectionLabel("備品の一覧（タップで、矢印と距離の案内）")
         if (model.floorItems.isEmpty()) Text("登録した備品がありません。備品登録モードで、先に登録してください。", fontSize = 14.sp, color = cs.onSurfaceVariant)
@@ -438,6 +444,11 @@ fun SettingsScreen(model: AppModel) {
     var facingB by remember { mutableStateOf(s.facingB.toString()) }
     var facingC by remember { mutableStateOf(s.facingC.toString()) }
     var camRot by remember { mutableStateOf(s.cameraRot.toString()) }
+    var serverUrl by remember { mutableStateOf(s.serverUrl) }
+    var loginId by remember { mutableStateOf(s.loginId) }
+    var password by remember { mutableStateOf(s.password) }
+    var employeeNo by remember { mutableStateOf(s.employeeNo) }
+    var threshold by remember { mutableStateOf(s.movedThresholdM.toString()) }
     var advanced by remember { mutableStateOf(false) }
 
     Box(
@@ -450,8 +461,24 @@ fun SettingsScreen(model: AppModel) {
                 Text("設定", fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
                 Spacer(Modifier.width(72.dp))
             }
+            SectionLabel("サーバー")
+            Text("棚卸の記録を送り、予定とアンカーを受け取ります。電波がないときは、端末に溜めて、あとで送ります。", fontSize = 14.sp, color = cs.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            TextField("サーバーのURL", "例：https://xxxx.azurewebsites.net", serverUrl, KeyboardType.Uri) { serverUrl = it }
+            TextField("ログインID", null, loginId, KeyboardType.Ascii) { loginId = it }
+            TextField("パスワード", "この端末に保存されます", password, KeyboardType.Password, hide = true) { password = it }
+            TextField("社員番号（記録した人）", "半角英数字。空でも構いません", employeeNo, KeyboardType.Ascii) { employeeNo = it }
+            SyncPanel(model)
+
+            SectionLabel("場所違いの判定")
+            NumberField("しきい値（m）", "同じ階で、登録位置からこれ以上離れて読むと、場所違い。階が違えば、常に場所違い", threshold) { threshold = it }
+
             SectionLabel("アンカー（階ごと）")
-            Text("A＝1階、B＝2階、C＝3階。階を移ったら、その階のアンカーを読み直します。", fontSize = 14.sp, color = cs.onSurfaceVariant)
+            Text(
+                if (model.serverAnchors.isNotEmpty()) "サーバーのアンカー（${model.serverAnchors.size}件）を使います。向きは、サーバーの管理画面で設定します。以下は、サーバーのアンカーがないときだけ使います。"
+                else "A＝1階、B＝2階、C＝3階。階を移ったら、その階のアンカーを読み直します。",
+                fontSize = 14.sp, color = cs.onSurfaceVariant,
+            )
             Spacer(Modifier.height(8.dp))
             NumberField("1階（A）：壁に正対する向き（°）", "北が0、東が90。分からなければ0のままで構いません", facingA) { facingA = it }
             NumberField("2階（B）：壁に正対する向き（°）", null, facingB) { facingB = it }
@@ -471,6 +498,8 @@ fun SettingsScreen(model: AppModel) {
                     Settings(
                         facingA = num(facingA, s.facingA), facingB = num(facingB, s.facingB), facingC = num(facingC, s.facingC),
                         cameraRot = num(camRot, s.cameraRot.toDouble()).toInt().coerceIn(-1, 3),
+                        serverUrl = serverUrl.trim(), loginId = loginId.trim(), password = password, employeeNo = employeeNo.trim(),
+                        movedThresholdM = num(threshold, s.movedThresholdM).coerceIn(0.5, 50.0),
                     ),
                 )
                 model.go(Screen.HOME)
@@ -488,6 +517,7 @@ fun SettingsScreen(model: AppModel) {
                         "この端末の、次のデータが消えます。元に戻せません。\n" +
                             "・登録した備品（${model.items.size}件）\n" +
                             "・棚卸の進み具合（確認済み ${model.confirmed.size}件）\n" +
+                            "・サーバーに送っていない記録（${model.syncStatus.pending}件）\n" +
                             "・設定（アンカーの向きなど）\n" +
                             "・アンカーで合わせた位置",
                     )
@@ -624,4 +654,72 @@ private fun FinishPanel(model: AppModel) {
             }
         }
     }
+}
+
+
+// ---------------- サーバーとの同期 ----------------
+
+/** 同期の状態（送信待ちの件数・結果）と、「今すぐ送る」。 */
+@Composable
+private fun SyncPanel(model: AppModel) {
+    val cs = MaterialTheme.colorScheme
+    val st: SyncStatus = model.syncStatus
+    val (label, tone) = when (st.state) {
+        SyncState.NOT_CONFIGURED -> "サーバー未設定" to Tone.INFO
+        SyncState.IDLE -> (if (st.pending > 0) "送信待ち ${st.pending}件" else "送信待ちなし") to (if (st.pending > 0) Tone.WARN else Tone.INFO)
+        SyncState.SYNCING -> "送信中…（残り ${st.pending}件）" to Tone.INFO
+        SyncState.OK -> (if (st.pending > 0) "送信待ち ${st.pending}件" else "同期済み") to (if (st.pending > 0) Tone.WARN else Tone.OK)
+        SyncState.OFFLINE -> "オフライン（送信待ち ${st.pending}件）" to Tone.WARN
+        SyncState.AUTH_ERROR -> "ログインできません（送信待ち ${st.pending}件）" to Tone.ERROR
+        SyncState.ERROR -> "送信できません（送信待ち ${st.pending}件）" to Tone.ERROR
+    }
+    AppCard {
+        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusBadge(label, tone)
+                Spacer(Modifier.weight(1f))
+                TextButton(onClick = { model.syncNow() }, enabled = st.state != SyncState.SYNCING) { Text("今すぐ送る") }
+            }
+            if (st.message.isNotEmpty() && st.state != SyncState.OK) {
+                Text(st.message, fontSize = 13.sp, color = cs.onSurfaceVariant)
+            }
+            if (st.dropped > 0) {
+                Text("サーバーに断られて、送らなかった操作が ${st.dropped}件 あります。", fontSize = 13.sp, color = cs.error)
+            }
+        }
+    }
+}
+
+/** QRが読めない備品を、管理番号の手入力で確かめる。備品の場所まで行って、入力する。 */
+@Composable
+private fun ManualPanel(model: AppModel) {
+    val cs = MaterialTheme.colorScheme
+    var no by remember { mutableStateOf("") }
+    SectionLabel("QRが読めない備品（手入力）")
+    AppCard {
+        Column(Modifier.fillMaxWidth().padding(16.dp)) {
+            Text("備品の場所まで行って、台帳の管理番号を入力してください。いまの位置が、その備品の場所として記録されます。", fontSize = 13.sp, color = cs.onSurfaceVariant)
+            Spacer(Modifier.height(8.dp))
+            TextField("管理番号", null, no, KeyboardType.Ascii) { no = it }
+            PrimaryButton("確認済みにする", enabled = no.isNotBlank()) {
+                model.confirmManual(no)
+                no = ""
+            }
+        }
+    }
+}
+
+@Composable
+private fun TextField(label: String, hint: String?, value: String, type: KeyboardType, hide: Boolean = false, onChange: (String) -> Unit) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onChange,
+        label = { Text(label) },
+        supportingText = hint?.let { { Text(it) } },
+        singleLine = true,
+        visualTransformation = if (hide) PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None,
+        keyboardOptions = KeyboardOptions(keyboardType = type),
+        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+        shape = MaterialTheme.shapes.small,
+    )
 }

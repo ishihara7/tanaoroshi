@@ -67,11 +67,15 @@ class MainActivity : ComponentActivity() {
             setRenderer(engine)
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
-        model = AppModel(engine, store) {
-            glView.performHapticFeedback(
-                if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.KEYBOARD_TAP,
-            )
-        }
+        model = AppModel(
+            engine, store,
+            haptic = {
+                glView.performHapticFeedback(
+                    if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.KEYBOARD_TAP,
+                )
+            },
+            uiPost = { r -> runOnUiThread(r) },
+        )
 
         setContent {
             TanaoroshiTheme { AppRoot(model, glView) }
@@ -80,6 +84,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        model.onResume()
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             requestPermissions(arrayOf(Manifest.permission.CAMERA), 1)
             return

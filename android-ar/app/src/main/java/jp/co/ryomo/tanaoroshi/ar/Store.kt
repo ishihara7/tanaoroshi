@@ -12,6 +12,8 @@ data class Placed(
     val missedLast: Boolean = false,
     /** 前回の棚卸で、予定にないのに読まれた */
     val wasUnexpected: Boolean = false,
+    /** 台帳の管理番号（手入力で確かめるときに使う）。台帳にない備品は null */
+    val assetNo: String? = null,
 )
 
 /** 棚卸で、予定にないのに読んだ備品。位置が取れなければ x・y は null。 */
@@ -33,6 +35,14 @@ data class Settings(
     val facingC: Double = 0.0,
     /** カメラ映像の向きを、強制する値（0〜3）。-1なら、端末の画面の向きを、そのまま使う */
     val cameraRot: Int = -1,
+    /** サーバーのURL（例：https://xxxx.azurewebsites.net）。空なら、同期しない */
+    val serverUrl: String = "",
+    val loginId: String = "",
+    val password: String = "",
+    /** 記録した人の社員番号（半角英数字。空でもよい） */
+    val employeeNo: String = "",
+    /** 同じ階で、登録位置からこれ以上離れて読んだら「場所違い」（m） */
+    val movedThresholdM: Double = MOVED_THRESHOLD_M,
 ) {
     fun anchors(): List<AnchorDef> = listOf(
         AnchorDef("A", "1階のアンカー（A）", 1, 0.0, 0.0, facingA),
@@ -42,7 +52,7 @@ data class Settings(
 }
 
 /** 端末への保存（設定と、登録した備品）。 */
-class Store(context: Context) {
+class Store(context: Context) : SyncStorage {
     private val prefs = context.getSharedPreferences("tanaoroshi", Context.MODE_PRIVATE)
 
     fun loadSettings(): Settings {
@@ -52,6 +62,11 @@ class Store(context: Context) {
             facingB = prefs.getFloat("facingB", d.facingB.toFloat()).toDouble(),
             facingC = prefs.getFloat("facingC", d.facingC.toFloat()).toDouble(),
             cameraRot = prefs.getInt("cameraRot", d.cameraRot),
+            serverUrl = prefs.getString("serverUrl", d.serverUrl) ?: "",
+            loginId = prefs.getString("loginId", d.loginId) ?: "",
+            password = prefs.getString("password", d.password) ?: "",
+            employeeNo = prefs.getString("employeeNo", d.employeeNo) ?: "",
+            movedThresholdM = prefs.getFloat("movedThresholdM", d.movedThresholdM.toFloat()).toDouble(),
         )
     }
 
@@ -60,6 +75,8 @@ class Store(context: Context) {
             .putFloat("facingA", s.facingA.toFloat()).putFloat("facingB", s.facingB.toFloat())
             .putFloat("facingC", s.facingC.toFloat())
             .putInt("cameraRot", s.cameraRot)
+            .putString("serverUrl", s.serverUrl).putString("loginId", s.loginId).putString("password", s.password)
+            .putString("employeeNo", s.employeeNo).putFloat("movedThresholdM", s.movedThresholdM.toFloat())
             .apply()
     }
 
@@ -68,6 +85,57 @@ class Store(context: Context) {
 
     fun saveConfirmed(tokens: Set<String>) {
         prefs.edit().putStringSet("confirmed", tokens).apply()
+    }
+
+    // ---- サーバーへの送信待ち・サーバーから取得した写し ----
+
+    private val outboxLock = Any()
+
+    override fun loadOutbox(): List<Op> = synchronized(outboxLock) { readOutbox() }
+
+    private fun readOutbox(): List<Op> = try {
+        val a = org.json.JSONArray(prefs.getString("outbox", "[]") ?: "[]")
+        (0 until a.length()).mapNotNull { opFromJson(a.getJSONObject(it)) }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    /** 送信待ちを、読んで、書き換えて、保存する（画面の操作と、裏の送信が、同時に触っても壊れないように、まとめて行う）。 */
+    override fun updateOutbox(change: (List<Op>) -> List<Op>): List<Op> = synchronized(outboxLock) {
+        val next = change(readOutbox())
+        val a = org.json.JSONArray()
+        next.forEach { a.put(it.toJson()) }
+        prefs.edit().putString("outbox", a.toString()).apply()
+        next
+    }
+
+    /** 最後に、サーバーで終えた棚卸のID（「終える」の取り消しに使う）。 */
+    override var lastFinishedInventoryId: Int?
+        get() = if (prefs.contains("lastFinishedInv")) prefs.getInt("lastFinishedInv", 0) else null
+        set(v) {
+            prefs.edit().apply { if (v == null) remove("lastFinishedInv") else putInt("lastFinishedInv", v) }.apply()
+        }
+
+    /** サーバーから取得したアンカー（オフラインでも使えるように、写しを持つ）。 */
+    fun loadAnchors(): List<ServerAnchor> = try {
+        val a = org.json.JSONArray(prefs.getString("anchors", "[]") ?: "[]")
+        (0 until a.length()).map {
+            val o = a.getJSONObject(it)
+            ServerAnchor(
+                o.getString("token"), o.getString("name"), o.getInt("floor"), o.getDouble("x"), o.getDouble("y"),
+                if (o.isNull("facing")) null else o.getDouble("facing"),
+            )
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    fun saveAnchors(list: List<ServerAnchor>) {
+        val a = org.json.JSONArray()
+        list.forEach {
+            a.put(JSONObject().put("token", it.token).put("name", it.name).put("floor", it.floor).put("x", it.xM).put("y", it.yM).putOpt("facing", it.facingDeg))
+        }
+        prefs.edit().putString("anchors", a.toString()).apply()
     }
 
     /** この端末のデータを、すべて消す（備品・棚卸の進み具合・設定）。 */
@@ -84,6 +152,7 @@ class Store(context: Context) {
                 out[key] = Placed(
                     o.getString("name"), o.getDouble("x"), o.getDouble("y"), o.getDouble("errM"), o.optInt("floor", 1),
                     o.optBoolean("located", true), o.optBoolean("missedLast", false), o.optBoolean("wasUnexpected", false),
+                    if (o.has("assetNo") && !o.isNull("assetNo")) o.getString("assetNo") else null,
                 )
             }
         } catch (e: Exception) {
@@ -96,7 +165,8 @@ class Store(context: Context) {
         val json = JSONObject()
         for ((k, p) in reg) {
             json.put(k, JSONObject().put("name", p.name).put("x", p.x).put("y", p.y).put("errM", p.errM).put("floor", p.floor)
-                .put("located", p.located).put("missedLast", p.missedLast).put("wasUnexpected", p.wasUnexpected))
+                .put("located", p.located).put("missedLast", p.missedLast).put("wasUnexpected", p.wasUnexpected)
+                .putOpt("assetNo", p.assetNo))
         }
         prefs.edit().putString("registry", json.toString()).apply()
     }

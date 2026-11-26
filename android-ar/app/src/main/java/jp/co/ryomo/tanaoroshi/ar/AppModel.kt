@@ -37,11 +37,31 @@ class AppModel(
     private val engine: ArEngine,
     private val store: Store,
     private val haptic: () -> Unit,
+    /** 裏のスレッドから、画面の状態を変えるとき、画面のスレッドで実行する */
+    private val uiPost: (() -> Unit) -> Unit = { it() },
 ) {
     var screen by mutableStateOf(Screen.HOME)
         private set
     var settings by mutableStateOf(store.loadSettings())
         private set
+    /** サーバーから取得したアンカー（オフラインでも使えるよう、端末に写しがある）。空のうちは、設定のA・B・Cを使う */
+    var serverAnchors by mutableStateOf(store.loadAnchors())
+        private set
+
+    /** サーバーとの同期の状態（送信待ちの件数など） */
+    var syncStatus by mutableStateOf(SyncStatus(pending = store.loadOutbox().size))
+        private set
+
+    private val sync = SyncController(
+        store, { settings }, uiPost, ::applyPlan, { syncStatus = it },
+        newItemErrM = { ErrorModel.estimate(engine.live.walkedM) },
+    )
+
+    /** 送信待ちを、いま送る（電波があれば、すぐ送る。なければ、残して、あとで再送する） */
+    fun syncNow() = sync.kick()
+
+    private var ticks = 0
+
     var targetToken by mutableStateOf<String?>(null)
         private set
     var message by mutableStateOf("")
@@ -120,6 +140,8 @@ class AppModel(
     fun tick() {
         live = engine.live
         hasRef = engine.hasReference()
+        // 30秒ごとに、送信待ちがあれば、送り直す（電波が戻ったときに、自動で送られるように）
+        if (++ticks % 300 == 0 && syncStatus.pending > 0) sync.kick()
         // 追跡が戻ったときの、向きの補正の結果を知らせる（実機で、座標が変わるのかを確かめられるように）
         val rc = engine.recoveryCount
         if (rc != seenRecovery) {
@@ -168,6 +190,8 @@ class AppModel(
 
     /** 棚卸を、最初からやり直す（全部を、未確認に戻す） */
     fun resetConfirmed() {
+        // サーバーに送った記録も、取り消す（未確認に戻した記録を、送る）
+        (confirmed + unexpected.keys).forEach { enqueue(unconfirmRecord(it)) }
         updateConfirmed(emptySet())
         updateMoved(emptyMap())
         updateUnexpected(emptyMap())
@@ -207,6 +231,7 @@ class AppModel(
         if (targetToken == token) targetToken = null
         if (routeMode) startRoute()
         persist()
+        enqueue(DeleteItemOp(newId(), token))
     }
 
     /**
@@ -220,6 +245,8 @@ class AppModel(
         moved = emptyMap()
         unexpected = emptyMap()
         lastFinish = null
+        serverAnchors = emptyList()
+        syncStatus = SyncStatus()
         targetToken = null
         floor = null
         stopRoute()
@@ -241,6 +268,7 @@ class AppModel(
         val (after, sum) = Inventory.finish(before, ErrorModel.estimate(engine.live.walkedM))
         lastFinish = before
         apply(after)
+        enqueue(FinishOp(newId()))
         targetToken = null
         stopRoute()
         say("棚卸を終えました。確認 ${sum.checked}件（うち場所違い ${sum.checkedMoved}件）、未確認 ${sum.missed}件、想定外 ${sum.unexpected}件。次回の予定にしました。")
@@ -255,6 +283,10 @@ class AppModel(
     fun undoFinish() {
         val before = lastFinish ?: return
         apply(before)
+        // まだサーバーに送っていない「終える」なら、取り除くだけ。送ったあとなら、取り消しを送る
+        val n = store.updateOutbox { Outbox.undoFinish(it, store.lastFinishedInventoryId, newId()) }.size
+        syncStatus = syncStatus.copy(pending = n)
+        sync.kick()
         lastFinish = null
         targetToken = null
         stopRoute()
@@ -265,6 +297,7 @@ class AppModel(
     fun unconfirmItem(token: String) {
         if (token !in confirmed) return
         apply(Inventory.unconfirm(snapshot(), token))
+        enqueue(unconfirmRecord(token))
         if (routeMode) startRoute()
         say("「${items.firstOrNull { it.token == token }?.placed?.name ?: token}」を、未確認に戻しました。")
     }
@@ -288,18 +321,62 @@ class AppModel(
         val i = items.indexOfFirst { it.token == token }
         if (i >= 0) items[i] = PlacedItem(token, p) else items.add(PlacedItem(token, p))
         persist()
+        enqueue(PutItemOp(newId(), token, p.name, p.floor, p.x, p.y, p.errM))
     }
 
+    // ---------------- サーバーとの同期 ----------------
+
+    private fun newId() = java.util.UUID.randomUUID().toString().replace("-", "")
+
+    /** 送信待ちに加えて、送る（送れなければ、残って、あとで再送される） */
+    private fun enqueue(op: Op) {
+        val n = store.updateOutbox { it + op }.size
+        syncStatus = syncStatus.copy(pending = n)
+        sync.kick()
+    }
+
+    private fun readRecord(token: String, method: String, floor: Int?, pos: Pair<Double, Double>?, moved: Boolean) = RecordOp(
+        newId(), "read", token, method, floor, pos?.first, pos?.second, moved, settings.employeeNo, System.currentTimeMillis(),
+    )
+
+    private fun unconfirmRecord(token: String) = RecordOp(
+        newId(), "unconfirm", token, "qr", null, null, null, false, settings.employeeNo, System.currentTimeMillis(),
+    )
+
+    /** サーバーの予定を、端末に反映する。送っていない変更があるうちは、予定を上書きしない（登録したばかりの備品が消えないように）。 */
+    private fun applyPlan(plan: ServerPlan) {
+        serverAnchors = plan.anchors
+        store.saveAnchors(plan.anchors)
+        if (store.loadOutbox().isNotEmpty()) return
+        items.clear()
+        items.addAll(plan.items)
+        persist()
+        if (targetToken != null && items.none { it.token == targetToken }) targetToken = null
+        if (routeMode) startRoute()
+    }
+
+    /** 画面に戻ってきたとき。送信待ちがあれば送り、サーバーの予定を取り直す */
+    fun onResume() = sync.kick()
+
     // ---------------- QR ----------------
+
+    /** アンカーの定義。サーバーから取得したものがあれば、それを使う。なければ（初めて使うとき）、設定のA・B・C */
+    private fun anchorFor(token: String): AnchorDef? =
+        if (serverAnchors.isNotEmpty()) {
+            serverAnchors.find { it.token == token }?.let { AnchorDef(it.token, it.name, it.floor, it.xM, it.yM, it.facingDeg ?: 0.0) }
+        } else {
+            settings.anchors().find { it.token == token }
+        }
 
     fun handleQr(text: String, pose: PoseSnapshot) {
         if (screen != Screen.REGISTER && screen != Screen.INVENTORY) return
         val ref = parseTagUrl(text) ?: return say("このQRは、このアプリのタグではありません。", false)
 
         if (ref.isAnchor) {
-            val a = settings.anchors().find { it.token == ref.token }
+            val a = anchorFor(ref.token)
                 ?: return say(
-                    "このアンカー（${ref.token}）は、登録されていません。アンカーは、A（1階）・B（2階）・C（3階）です。",
+                    if (serverAnchors.isEmpty()) "このアンカー（${ref.token}）は、登録されていません。アンカーは、A（1階）・B（2階）・C（3階）です。"
+                    else "このアンカー（${ref.token}）は、サーバーに登録されていません。管理画面で登録して、同期してください。",
                     false,
                 )
             val notes = mutableListOf<String>()
@@ -345,38 +422,63 @@ class AppModel(
             return
         }
 
+        readItem(ref.token, name, pose, "qr")
+    }
+
+    /** 棚卸：管理番号を手入力して、確かめた備品にする（QRが読めないとき）。備品の場所まで行って、入力する。 */
+    fun confirmManual(assetNo: String) {
+        if (screen != Screen.INVENTORY) return
+        val no = assetNo.trim()
+        if (no.isEmpty()) return say("管理番号を入力してください。", false)
+        val item = items.firstOrNull { it.placed.assetNo.equals(no, ignoreCase = true) }
+            ?: return say("管理番号「$no」の備品は、予定にありません。台帳にある備品は、同期すると予定に入ります。", false)
+        readItem(item.token, item.placed.name, null, "manual")
+    }
+
+    /**
+     * 棚卸：備品を読んだ（QR）、または手入力した（manual）。確かめた備品にして、記録を送信待ちに加える。
+     * pose が null（手入力）のときは、いまの追跡位置を使う。手入力は、位置合わせの目印にはしない。
+     */
+    private fun readItem(token: String, name: String, pose: PoseSnapshot?, method: String) {
+        val l = engine.live
         // 棚卸：備品のQRを読んだら、確かめた備品にする。アンカーを読む前でも、確かめることはできる
         lastFinish = null // 新しく読んだら、前の「棚卸を終える」は取り消せない
-        val posNow = if (engine.hasReference() && !l.lostTracking) engine.mapAt(pose) else null
-        val placed = items.firstOrNull { it.token == ref.token }?.placed
+        val posNow = when {
+            !engine.hasReference() || l.lostTracking -> null
+            pose != null -> engine.mapAt(pose)
+            else -> l.mapX?.let { x -> l.mapY?.let { y -> x to y } } // 手入力：いまの追跡位置
+        }
+        val placed = items.firstOrNull { it.token == token }?.placed
         if (placed == null) {
             // 予定にない備品。登録はせず、「想定外」として記録する（位置が取れなければ階だけ）
-            val first = ref.token !in unexpected
-            updateUnexpected(unexpected + (ref.token to Unexpected(ref.token, name, floor ?: 1, posNow?.first, posNow?.second)))
+            val first = token !in unexpected
+            updateUnexpected(unexpected + (token to Unexpected(token, name, floor ?: 1, posNow?.first, posNow?.second)))
+            enqueue(readRecord(token, method, floor, posNow, false))
             haptic()
             return say("「$name」は、予定にありません。想定外として記録しました。" + if (first) "" else "（記録済み）", false)
         }
         // 別の階の備品は、位置の目印にしない（座標が別）。確かめることだけはできる
         val j = Inventory.judgeMoved(placed, floor, posNow?.first, posNow?.second)
         val otherFloor = j.otherFloor
-        val already = ref.token in confirmed
+        val already = token in confirmed
         val gap = j.gapM
         val isMoved = j.isMoved
         updateMoved(
-            if (isMoved) moved + (ref.token to MovedAt(ref.token, floor ?: placed.floor, posNow?.first, posNow?.second))
-            else moved - ref.token,
+            if (isMoved) moved + (token to MovedAt(token, floor ?: placed.floor, posNow?.first, posNow?.second))
+            else moved - token,
         )
         val gapText = if (gap != null) "　登録位置との差：%.2f m".format(gap) else ""
         val movedText = when {
             !isMoved -> ""
             otherFloor -> "\n登録は${placed.floor}階です。場所違いとして記録しました。"
-            else -> "\n登録位置から %.1f m 以上離れています。場所違いとして記録しました。".format(MOVED_THRESHOLD_M)
+            else -> "\n登録位置から %.1f m 以上離れています。場所違いとして記録しました。".format(settings.movedThresholdM)
         }
         // 備品を読むたびに、その場所を目印に、位置と向きを合わせ直す（前の目印から2m以上歩いていれば、向きも直る）。場所違いは、目印にしない
-        val fixNote = if (engine.hasReference() && !otherFloor && !isMoved) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
+        val fixNote = if (pose != null && engine.hasReference() && !otherFloor && !isMoved) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
+        enqueue(readRecord(token, method, floor ?: placed.floor, posNow, isMoved))
         haptic()
         val wasRoute = routeMode
-        confirm(ref.token, placed.x, placed.y)
+        confirm(token, placed.x, placed.y)
         val left = floorItems.count { it.token !in confirmed }
         val next = if (wasRoute) route.firstOrNull() else null
         say(
