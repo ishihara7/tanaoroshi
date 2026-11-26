@@ -50,6 +50,11 @@ def get_plan(request: Request, user: User = Depends(auth.api_user), session: Ses
             for a in session.scalars(select(Anchor).where(Anchor.is_active == True).order_by(Anchor.floor, Anchor.name))  # noqa: E712
         ],
         "items": [item_json(i) for i in svc.load_items(session)],
+        # 台帳（管理対象の備品）のタグ。端末は、これにないタグを、登録させない（電波がなくても、判断できるように）
+        "assets": [
+            {"token": a.tag_token, "asset_no": a.asset_no, "name": a.name}
+            for a in session.scalars(select(Asset).where(Asset.is_active == True).order_by(Asset.asset_no))  # noqa: E712
+        ],
         "inventory": {"id": inv.id, "started_at": inv.started_at.isoformat()} if inv else None,
     }
 
@@ -59,20 +64,24 @@ class ItemIn(BaseModel):
     x: float
     y: float
     err_m: float = Field(default=0.0, ge=0)
-    name: str = Field(default="", max_length=100)  # 台帳にないタグのときだけ使う。空ならトークンを名前にする
 
 
 @router.put("/items/{token}")
 def put_item(token: str, body: ItemIn, user: User = Depends(auth.api_user), _csrf: None = Depends(auth.api_csrf), session: Session = Depends(get_session)):
-    """備品登録モード：備品の階と位置を、予定として登録する（あれば、置き換える）。"""
+    """備品登録モード：台帳にある備品の階と位置を、予定として登録する（あれば、置き換える）。
+
+    台帳にないタグ（管理対象外）は、登録できない。棚卸で読むと、想定外になる。
+    """
     _check_token(token)
     asset = _asset_by_token(session, token)
-    name = asset.name if asset else (body.name.strip() or token)
+    if asset is None:
+        raise HTTPException(400, "台帳にない備品です（管理対象外）。管理画面で台帳に登録してから、登録してください。")
+    name = asset.name
     item = session.get(ArItem, token)
     if item is None:
         item = ArItem(token=token)
         session.add(item)
-    item.asset_no = asset.asset_no if asset else None
+    item.asset_no = asset.asset_no
     item.name, item.floor, item.x, item.y, item.err_m, item.located = name, body.floor, body.x, body.y, body.err_m, True
     item.missed_last = item.was_unexpected = False
     session.commit()

@@ -75,6 +75,7 @@ class ArEngine(
     private var viewWidth = 1
     private var viewHeight = 1
     private var viewportChanged = true
+    private var appliedRotation = -1
     private var lastX = 0.0
     private var lastZ = 0.0
     private var hasLast = false
@@ -251,10 +252,14 @@ class ArEngine(
             s.setCameraTextureName(textureId)
             textureSet = true
         }
+        // 端末の向き（縦・横・逆向き）は、毎フレーム確かめる。横向きから、逆向きの横向きに変わると、画面の大きさは変わらないので、
+        // 画面の大きさの変化だけでは、気づけない
+        @Suppress("DEPRECATION")
+        val rotation = if (rotationOverride >= 0) rotationOverride else activity.windowManager.defaultDisplay.rotation
+        if (rotation != appliedRotation) viewportChanged = true
         if (viewportChanged) {
-            @Suppress("DEPRECATION")
-            val rotation = if (rotationOverride >= 0) rotationOverride else activity.windowManager.defaultDisplay.rotation
             s.setDisplayGeometry(rotation, viewWidth, viewHeight)
+            appliedRotation = rotation
             viewportChanged = false
         }
         val frame = try {

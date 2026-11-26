@@ -62,6 +62,9 @@ import jp.co.ryomo.tanaoroshi.ar.label
 /** カメラ映像の縦横比（幅:高さ = 3:4）。切り取らずに、視野の全体を出す。 */
 private const val CAMERA_ASPECT = 3f / 4f
 
+/** 横向きのときの、カメラ映像の比率（幅÷高さ）。 */
+private const val CAMERA_ASPECT_LANDSCAPE = 4f / 3f
+
 /** 画面の中身の最大幅（タブレットで間延びしないように）。 */
 private val CONTENT_MAX_WIDTH = 640.dp
 
@@ -173,35 +176,72 @@ private fun CameraShell(
 ) {
     val cs = MaterialTheme.colorScheme
     BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-        val camH: Dp = minOf(maxHeight * 0.42f, maxWidth / CAMERA_ASPECT)
-        val camW: Dp = camH * CAMERA_ASPECT
-        Column(Modifier.fillMaxSize()) {
-            Row(
-                Modifier.fillMaxWidth().background(cs.background).padding(horizontal = 8.dp, vertical = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(Modifier.width(120.dp), contentAlignment = Alignment.CenterStart) { TextButton(onClick = { model.go(Screen.HOME) }) { Text("‹ 戻る", fontSize = 16.sp) } }
-                Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-                Box(Modifier.width(120.dp), contentAlignment = Alignment.CenterEnd) { TrackingBadge(model) }
+        val cameraBox: @Composable (Dp, Dp) -> Unit = { w, h ->
+            Box(
+                Modifier.size(w, h).onGloballyPositioned {
+                    val p = it.positionInRoot()
+                    onCamera(CameraRect(p.x.toInt(), p.y.toInt(), it.size.width, it.size.height))
+                },
+            ) { CameraOverlay(model, ghost) }
+        }
+        val scrolling: @Composable () -> Unit = {
+            Column(
+                Modifier.widthIn(max = CONTENT_MAX_WIDTH).fillMaxSize().verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+            ) { content() }
+        }
+        if (maxWidth > maxHeight) {
+            // 横向き：左にカメラ（4:3の横長）、右に操作。カメラの場所だけ塗らずに、穴にする（後ろの映像を見せる）
+            Row(Modifier.fillMaxSize()) {
+                Column(Modifier.weight(1f).fillMaxHeight()) {
+                    CameraHeader(model, title)
+                    BoxWithConstraints(Modifier.weight(1f).fillMaxWidth()) {
+                        val camW: Dp = minOf(maxWidth, maxHeight * CAMERA_ASPECT_LANDSCAPE)
+                        val camH: Dp = camW / CAMERA_ASPECT_LANDSCAPE
+                        val padTop: Dp = (maxHeight - camH) / 2
+                        val padLeft: Dp = (maxWidth - camW) / 2
+                        Column(Modifier.fillMaxSize()) {
+                            Box(Modifier.fillMaxWidth().height(padTop).background(cs.background))
+                            Row(Modifier.fillMaxWidth().height(camH)) {
+                                Box(Modifier.width(padLeft).fillMaxHeight().background(cs.background))
+                                cameraBox(camW, camH)
+                                Box(Modifier.weight(1f).fillMaxHeight().background(cs.background))
+                            }
+                            Box(Modifier.weight(1f).fillMaxWidth().background(cs.background))
+                        }
+                    }
+                }
+                Box(Modifier.weight(1f).fillMaxHeight().background(cs.background), contentAlignment = Alignment.TopCenter) { scrolling() }
             }
-            // カメラの左右は、背景色で塗り、中央は、穴（映像が見える）にする
-            Row(Modifier.fillMaxWidth().height(camH)) {
-                Box(Modifier.weight(1f).fillMaxHeight().background(cs.background))
-                Box(
-                    Modifier.size(camW, camH).onGloballyPositioned {
-                        val p = it.positionInRoot()
-                        onCamera(CameraRect(p.x.toInt(), p.y.toInt(), it.size.width, it.size.height))
-                    },
-                ) { CameraOverlay(model, ghost) }
-                Box(Modifier.weight(1f).fillMaxHeight().background(cs.background))
-            }
-            Box(Modifier.weight(1f).fillMaxWidth().background(cs.background), contentAlignment = Alignment.TopCenter) {
-                Column(
-                    Modifier.widthIn(max = CONTENT_MAX_WIDTH).fillMaxSize().verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                ) { content() }
+        } else {
+            // 縦向き：上にカメラ（3:4の縦長）、下に操作
+            val camH: Dp = minOf(maxHeight * 0.42f, maxWidth / CAMERA_ASPECT)
+            val camW: Dp = camH * CAMERA_ASPECT
+            Column(Modifier.fillMaxSize()) {
+                CameraHeader(model, title)
+                // カメラの左右は、背景色で塗り、中央は、穴（映像が見える）にする
+                Row(Modifier.fillMaxWidth().height(camH)) {
+                    Box(Modifier.weight(1f).fillMaxHeight().background(cs.background))
+                    cameraBox(camW, camH)
+                    Box(Modifier.weight(1f).fillMaxHeight().background(cs.background))
+                }
+                Box(Modifier.weight(1f).fillMaxWidth().background(cs.background), contentAlignment = Alignment.TopCenter) { scrolling() }
             }
         }
+    }
+}
+
+/** 戻るボタン・題名・追跡の状態。 */
+@Composable
+private fun CameraHeader(model: AppModel, title: String) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        Modifier.fillMaxWidth().background(cs.background).padding(horizontal = 8.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(Modifier.width(120.dp), contentAlignment = Alignment.CenterStart) { TextButton(onClick = { model.go(Screen.HOME) }) { Text("‹ 戻る", fontSize = 16.sp) } }
+        Text(title, fontSize = 20.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        Box(Modifier.width(120.dp), contentAlignment = Alignment.CenterEnd) { TrackingBadge(model) }
     }
 }
 

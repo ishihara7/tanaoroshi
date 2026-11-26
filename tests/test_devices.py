@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.db import Base, get_engine
 from app.main import app
-from app.models import ArItem, DeviceToken, EnrollCode, User, utcnow
+from app.models import ArItem, Asset, DeviceToken, EnrollCode, User, utcnow
 from app.services import devices
 from tests.test_auth import client, login, make_user, token  # noqa: F401（フィクスチャを再利用）
 
@@ -32,6 +32,7 @@ def clean_devices():
             s.execute(delete(DeviceToken).where(~DeviceToken.user_id.in_(select(User.id))))  # 消えたユーザーの分
             s.execute(delete(EnrollCode).where(~EnrollCode.user_id.in_(select(User.id))))
             s.execute(delete(ArItem).where(ArItem.token.like("Dev%")))
+            s.execute(delete(Asset).where(Asset.asset_no.like("9996%")))
             s.commit()
     wipe()
     yield
@@ -102,6 +103,9 @@ def test_token_authenticates_api_without_cookie_or_csrf(make_user, clean_devices
     with Session(get_engine()) as s:
         code = issue(s, uid)
     tok = enroll(fresh, code).json()["token"]
+    with Session(get_engine()) as s:  # 登録できるのは、台帳にあるタグだけ
+        s.add(Asset(asset_no="9996000001", name="端末のテスト", tag_token="DevTagA"))
+        s.commit()
     with TestClient(app, base_url="https://testserver") as other:  # Cookie のない、新しい接続
         assert other.get("/api/ar/plan", headers=bearer(tok)).status_code == 200
         # 更新も、CSRFヘッダーなしで通る（トークンは、ブラウザが勝手に付けるものではないため）

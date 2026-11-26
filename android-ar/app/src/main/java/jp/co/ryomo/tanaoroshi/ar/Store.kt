@@ -122,6 +122,23 @@ class Store(context: Context) : SyncStorage {
             prefs.edit().apply { if (v == null) remove("lastFinishedInv") else putInt("lastFinishedInv", v) }.apply()
         }
 
+    /** サーバーから取得した台帳の備品（管理対象のタグ）。オフラインでも、登録の可否を判断できるように、写しを持つ。 */
+    fun loadLedger(): List<LedgerAsset> = try {
+        val a = org.json.JSONArray(prefs.getString("ledger", "[]") ?: "[]")
+        (0 until a.length()).map {
+            val o = a.getJSONObject(it)
+            LedgerAsset(o.getString("t"), o.getString("n"), o.getString("m"))
+        }
+    } catch (e: Exception) {
+        emptyList()
+    }
+
+    fun saveLedger(list: List<LedgerAsset>) {
+        val a = org.json.JSONArray()
+        list.forEach { a.put(JSONObject().put("t", it.token).put("n", it.assetNo).put("m", it.name)) }
+        prefs.edit().putString("ledger", a.toString()).apply()
+    }
+
     /** サーバーから取得したアンカー（オフラインでも使えるように、写しを持つ）。 */
     fun loadAnchors(): List<ServerAnchor> = try {
         val a = org.json.JSONArray(prefs.getString("anchors", "[]") ?: "[]")

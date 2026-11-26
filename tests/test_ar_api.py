@@ -53,7 +53,21 @@ def admin(client, make_user, clean):  # noqa: F811
     return client
 
 
-def put_item(c, tok, floor=1, x=0.0, y=0.0, **kw):
+_asset_n = [0]
+
+
+def ledger(tok, name=None):
+    """台帳に、そのタグの備品を用意する（なければ作る）。登録できるのは、台帳にあるタグだけ。"""
+    with Session(get_engine()) as s:
+        if s.scalar(select(Asset).where(Asset.tag_token == tok)) is None:
+            _asset_n[0] += 1
+            s.add(Asset(asset_no=f"99971{_asset_n[0]:05d}", name=name or tok, tag_token=tok))
+            s.commit()
+
+
+def put_item(c, tok, floor=1, x=0.0, y=0.0, name=None, **kw):
+    if re.fullmatch(r"[A-Za-z0-9_-]{1,40}", tok):
+        ledger(tok, name)
     return c.put(f"/api/ar/items/{tok}", json={"floor": floor, "x": x, "y": y, **kw})
 
 
@@ -95,12 +109,39 @@ def test_register_item_and_read_plan(api):
     assert api.get("/api/ar/plan").json()["items"] == []
 
 
-def test_register_uses_ledger_name_when_tag_exists(api):
+def test_register_takes_name_and_asset_no_from_ledger(api):
     with Session(get_engine()) as s:
         s.add(Asset(asset_no="9997000001", name="台帳のPC", tag_token="TledgerPC01"))
         s.commit()
-    r = put_item(api, "TledgerPC01", name="無視される名前").json()
+    r = put_item(api, "TledgerPC01").json()
     assert r["name"] == "台帳のPC" and r["asset_no"] == "9997000001"
+
+
+def test_tag_not_in_ledger_cannot_be_registered(api):
+    """管理対象外（台帳にない）のタグは、登録できない。棚卸で読むと、想定外になる。"""
+    r = api.put("/api/ar/items/OldPrintedQr1", json={"floor": 1, "x": 0, "y": 0})
+    assert r.status_code == 400 and "台帳にない" in r.json()["detail"]
+    assert api.get("/api/ar/plan").json()["items"] == []
+    inv = post(api, rec("OldPrintedQr1")).json()["inventory_id"]  # 棚卸で読むと、想定外
+    s = api.post(f"/api/ar/inventories/{inv}/finish").json()["summary"]
+    assert s["unexpected"] == 1 and s["checked"] == 0
+
+
+def test_disposed_asset_cannot_be_registered(api):
+    with Session(get_engine()) as s:
+        s.add(Asset(asset_no="9997000003", name="廃棄済み", tag_token="TdisposedPC1", is_active=False))
+        s.commit()
+    assert api.put("/api/ar/items/TdisposedPC1", json={"x": 0, "y": 0}).status_code == 400
+
+
+def test_plan_lists_ledger_assets_for_the_app(api):
+    with Session(get_engine()) as s:
+        s.add(Asset(asset_no="9997000004", name="台帳の備品", tag_token="TledgerList1"))
+        s.add(Asset(asset_no="9997000005", name="廃棄", tag_token="TledgerList2", is_active=False))
+        s.commit()
+    assets = {a["token"]: a for a in api.get("/api/ar/plan").json()["assets"]}
+    assert assets["TledgerList1"] == {"token": "TledgerList1", "asset_no": "9997000004", "name": "台帳の備品"}
+    assert "TledgerList2" not in assets  # 廃棄済みは、含めない
 
 
 def test_invalid_token_is_rejected(api):
@@ -278,8 +319,10 @@ def test_result_page_and_csv(client, make_user, clean):  # noqa: F811
     login(client, make_user("user"))
     csrf = client.get("/api/ar/plan").json()["csrf"]
     client.headers.update({"X-CSRF-Token": csrf})
-    client.put("/api/ar/items/a1", json={"x": 0, "y": 0, "name": "=PC"})
-    client.put("/api/ar/items/b1", json={"x": 0, "y": 0, "name": "プリンター"})
+    ledger("a1", "=PC")
+    ledger("b1", "プリンター")
+    client.put("/api/ar/items/a1", json={"x": 0, "y": 0})
+    client.put("/api/ar/items/b1", json={"x": 0, "y": 0})
     inv = post(client, rec("a1", employee_no="E1001", floor=1, x=1.0, y=1.0, moved=True), rec("z9", 1, floor=1)).json()["inventory_id"]
     # 一般ユーザーは、結果ページを見られない
     assert client.get(f"/admin/inventories/{inv}", follow_redirects=False).status_code == 303

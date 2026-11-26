@@ -48,6 +48,10 @@ class AppModel(
     var serverAnchors by mutableStateOf(store.loadAnchors())
         private set
 
+    /** 台帳の備品（タグのトークン → 管理番号・名称）。台帳にないタグは、管理対象外で、登録できない */
+    var ledger by mutableStateOf(store.loadLedger().associateBy { it.token })
+        private set
+
     /** サーバーとの同期の状態（送信待ちの件数など） */
     var syncStatus by mutableStateOf(SyncStatus(pending = store.loadOutbox().size))
         private set
@@ -246,6 +250,7 @@ class AppModel(
         unexpected = emptyMap()
         lastFinish = null
         serverAnchors = emptyList()
+        ledger = emptyMap()
         syncStatus = SyncStatus()
         targetToken = null
         floor = null
@@ -347,6 +352,8 @@ class AppModel(
     private fun applyPlan(plan: ServerPlan) {
         serverAnchors = plan.anchors
         store.saveAnchors(plan.anchors)
+        ledger = plan.ledger.associateBy { it.token }
+        store.saveLedger(plan.ledger)
         if (store.loadOutbox().isNotEmpty()) return
         items.clear()
         items.addAll(plan.items)
@@ -442,6 +449,16 @@ class AppModel(
         val name = ASSET_NAMES[ref.token] ?: ref.token
 
         if (screen == Screen.REGISTER) {
+            // 登録できるのは、台帳にある備品だけ。サーバーを使うときは、台帳にないタグ（管理対象外）を、登録させない
+            val asset = ledger[ref.token]
+            if (settings.serverUrl.isNotBlank()) {
+                if (ledger.isEmpty()) {
+                    return say("台帳をまだ受け取っていません。設定でサーバーを設定して、「今すぐ送る」で同期してください。", false)
+                }
+                if (asset == null) {
+                    return say("このQRの備品は、台帳にありません（管理対象外）。登録できません。管理画面で、台帳に登録してください。", false)
+                }
+            }
             if (!engine.hasReference()) return say("先に、アンカーのQRを読み取ってください。", false)
             val pos = engine.mapAt(pose) ?: return
             val err = ErrorModel.estimate(l.walkedM)
@@ -457,7 +474,7 @@ class AppModel(
                 }
             }
             val f = floor ?: 1
-            register(ref.token, Placed(name, pos.first, pos.second, err, f))
+            register(ref.token, Placed(asset?.name ?: name, pos.first, pos.second, err, f, assetNo = asset?.assetNo))
             haptic()
             say("「$name」を${f}階に登録しました（誤差 ±%.1f m）。".format(err))
             return
@@ -493,10 +510,16 @@ class AppModel(
         if (placed == null) {
             // 予定にない備品。登録はせず、「想定外」として記録する（位置が取れなければ階だけ）
             val first = token !in unexpected
-            updateUnexpected(unexpected + (token to Unexpected(token, name, floor ?: 1, posNow?.first, posNow?.second)))
+            val inLedger = ledger[token]
+            updateUnexpected(unexpected + (token to Unexpected(token, inLedger?.name ?: name, floor ?: 1, posNow?.first, posNow?.second)))
             enqueue(readRecord(token, method, floor, posNow, false))
             haptic()
-            return say("「$name」は、予定にありません。想定外として記録しました。" + if (first) "" else "（記録済み）", false)
+            val why = when {
+                inLedger != null -> "台帳にありますが、位置が登録されていません。"
+                ledger.isNotEmpty() -> "台帳にありません（管理対象外）。"
+                else -> "予定にありません。"
+            }
+            return say("「${inLedger?.name ?: name}」は、$why 想定外として記録しました。" + if (first) "" else "（記録済み）", false)
         }
         // 別の階の備品は、位置の目印にしない（座標が別）。確かめることだけはできる
         val j = Inventory.judgeMoved(placed, floor, posNow?.first, posNow?.second)

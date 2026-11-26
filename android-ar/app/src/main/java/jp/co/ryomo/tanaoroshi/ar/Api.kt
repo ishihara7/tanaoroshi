@@ -11,8 +11,14 @@ import java.time.Instant
 /** サーバーのアンカー（位置合わせの基準点）。向きは、未設定なら null。 */
 data class ServerAnchor(val token: String, val name: String, val floor: Int, val xM: Double, val yM: Double, val facingDeg: Double?)
 
-/** サーバーの予定。端末は、これを写しとして持つ。inventoryId：開いている棚卸（なければ null）。 */
-data class ServerPlan(val csrf: String, val anchors: List<ServerAnchor>, val items: List<PlacedItem>, val inventoryId: Int?)
+/** 台帳（管理対象）の備品。token：タグのトークン（QRのURLの最後の部分）。 */
+data class LedgerAsset(val token: String, val assetNo: String, val name: String)
+
+/** サーバーの予定。端末は、これを写しとして持つ。inventoryId：開いている棚卸（なければ null）。ledger：台帳の備品。 */
+data class ServerPlan(
+    val csrf: String, val anchors: List<ServerAnchor>, val items: List<PlacedItem>, val inventoryId: Int?,
+    val ledger: List<LedgerAsset> = emptyList(),
+)
 
 /** ログインが必要、または、ログインし直しが必要（401・CSRFの期限切れ・ID/パスワードの誤り）。 */
 class AuthException(message: String) : Exception(message)
@@ -130,7 +136,13 @@ class ApiClient(baseUrl: String, private val token: String? = null, private val 
             }
         }
         val inv = if (o.isNull("inventory")) null else o.getJSONObject("inventory").getInt("id")
-        return ServerPlan(csrf, anchors, items, inv)
+        val ledger = o.optJSONArray("assets")?.let { a ->
+            (0 until a.length()).map {
+                val x = a.getJSONObject(it)
+                LedgerAsset(x.getString("token"), x.getString("asset_no"), x.getString("name"))
+            }
+        } ?: emptyList()
+        return ServerPlan(csrf, anchors, items, inv, ledger)
     }
 
     fun putItem(op: PutItemOp) {

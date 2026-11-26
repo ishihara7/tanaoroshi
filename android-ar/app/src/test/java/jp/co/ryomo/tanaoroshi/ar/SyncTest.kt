@@ -79,6 +79,7 @@ private class FakeServer {
             {"token":"Adef","name":"2階入口","floor":2,"x_m":1.0,"y_m":2.0,"facing_deg":null}],
            "items":[{"token":"Tnote01","asset_no":"A001","name":"ノートPC","floor":1,"x":3.0,"y":4.0,"err_m":0.5,
                      "located":true,"missed_last":false,"was_unexpected":false}],
+           "assets":[{"token":"Tnote01","asset_no":"A001","name":"ノートPC"},{"token":"Tproj01","asset_no":"A002","name":"プロジェクター"}],
            "inventory":${inventoryId?.let { """{"id":$it}""" } ?: "null"}}""",
     ).toString()
 
@@ -134,6 +135,8 @@ class SyncTest {
         assertEquals(90.0, p.anchors[0].facingDeg)
         assertNull(p.anchors[1].facingDeg)
         assertEquals(5, p.inventoryId)
+        // 台帳（管理対象のタグ）も、受け取れている
+        assertEquals(listOf(LedgerAsset("Tnote01", "A001", "ノートPC"), LedgerAsset("Tproj01", "A002", "プロジェクター")), p.ledger)
     }
 
     @Test

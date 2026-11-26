@@ -23,7 +23,7 @@ class RealServerTest {
     private val pw = System.getenv("TANAOROSHI_E2E_PASSWORD")
 
     @Test
-    fun 登録_読む_終える_取り消しまでが_本物のサーバーで通る() {
+    fun 台帳にないタグは登録できず_棚卸で想定外になる_本物のサーバーで() {
         assumeTrue(url != null && user != null && pw != null)
         val store = MemStore()
         val statuses = mutableListOf<SyncStatus>()
@@ -38,27 +38,19 @@ class RealServerTest {
             assertTrue(store.outbox.isEmpty())
         }
 
-        // 登録（備品登録モード）
-        run(PutItemOp("p1", "E2eTagA", "テスト備品A", 1, 1.0, 1.0, 0.5), PutItemOp("p2", "E2eTagB", "テスト備品B", 1, 2.0, 2.0, 0.5))
-        assertEquals(setOf("E2eTagA", "E2eTagB"), plan!!.items.map { it.token }.toSet())
-        // 棚卸：Aを読む・Bを読んで取り消す・予定にないCを読む
-        fun read(id: String, token: String, kind: String = "read") =
-            RecordOp(id, kind, token, "qr", 1, 1.0, 1.0, false, "E1001", System.currentTimeMillis())
-        run(read("e2e0000000000001", "E2eTagA"), read("e2e0000000000002", "E2eTagB"), read("e2e0000000000003", "E2eTagB", "unconfirm"), read("e2e0000000000004", "E2eTagC"))
-        assertTrue(plan!!.inventoryId != null)
-        // 終える：Bは前回未確認、Cは予定に加わる
+        // 台帳にないタグは、登録を断られる（捨てられて、件数に数えられる）
+        run(PutItemOp("p1", "E2eNotInLedger", "管理対象外", 1, 1.0, 1.0, 0.5))
+        assertEquals(1, statuses.last().dropped)
+        assertTrue(plan!!.items.none { it.token == "E2eNotInLedger" })
+        assertTrue(plan!!.ledger.none { it.token == "E2eNotInLedger" })
+        // 棚卸で読むと、想定外になり、終えると、「前回 想定外」の備品として予定に加わる
+        run(RecordOp("e2e0000000000001", "read", "E2eNotInLedger", "qr", 1, 1.0, 1.0, false, "E1001", System.currentTimeMillis()))
         run(FinishOp("f1"))
-        val after = plan!!.items.associateBy { it.token }
-        assertTrue(after.getValue("E2eTagB").placed.missedLast)
-        assertTrue(!after.getValue("E2eTagA").placed.missedLast)
-        assertTrue(after.getValue("E2eTagC").placed.wasUnexpected)
-        assertEquals(null, plan!!.inventoryId)
-        // 取り消し：Cが予定から消え、開いた棚卸が戻る
-        val finished = store.lastFinishedInventoryId!!
-        run(UndoOp("u1", finished))
-        assertEquals(setOf("E2eTagA", "E2eTagB"), plan!!.items.map { it.token }.toSet())
-        assertEquals(finished, plan!!.inventoryId)
-        // 後片づけ：登録した備品を消す
-        run(DeleteItemOp("d1", "E2eTagA"), DeleteItemOp("d2", "E2eTagB"))
+        val added = plan!!.items.single { it.token == "E2eNotInLedger" }.placed
+        assertTrue(added.wasUnexpected)
+        assertEquals(null, added.assetNo)
+        // 取り消すと、予定から消える
+        run(UndoOp("u1", store.lastFinishedInventoryId!!))
+        assertTrue(plan!!.items.none { it.token == "E2eNotInLedger" })
     }
 }
