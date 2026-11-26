@@ -219,6 +219,7 @@ class AppModel(
         confirmed = emptySet()
         moved = emptyMap()
         unexpected = emptyMap()
+        lastFinish = null
         targetToken = null
         floor = null
         stopRoute()
@@ -236,35 +237,47 @@ class AppModel(
      * 予定にないのに読んだ備品は、新しい予定に加える（位置が取れていなければ、階だけ）。
      */
     fun finishInventory() {
-        val checkedN = items.count { it.token in confirmed }
-        val missedN = items.size - checkedN
-        val movedN = items.count { it.token in confirmed && it.token in moved }
-        val extra = unexpected.values.filter { u -> items.none { it.token == u.token } }
-        val next = items.map { it ->
-            val p = it.placed
-            if (it.token in confirmed) {
-                val m = moved[it.token]
-                val at = if (m != null && m.x != null && m.y != null) p.copy(x = m.x, y = m.y, floor = m.floor) else p
-                it.copy(placed = at.copy(missedLast = false, wasUnexpected = false))
-            } else {
-                it.copy(placed = p.copy(missedLast = true))
-            }
-        } + extra.map {
-            val located = it.x != null && it.y != null
-            PlacedItem(
-                it.token,
-                Placed(it.name, it.x ?: 0.0, it.y ?: 0.0, if (located) ErrorModel.estimate(engine.live.walkedM) else 0.0, it.floor, located, wasUnexpected = true),
-            )
-        }
-        items.clear()
-        items.addAll(next)
-        persist()
-        updateConfirmed(emptySet())
-        updateMoved(emptyMap())
-        updateUnexpected(emptyMap())
+        val before = snapshot()
+        val (after, sum) = Inventory.finish(before, ErrorModel.estimate(engine.live.walkedM))
+        lastFinish = before
+        apply(after)
         targetToken = null
         stopRoute()
-        say("棚卸を終えました。確認 ${checkedN}件（うち場所違い ${movedN}件）、未確認 ${missedN}件、想定外 ${extra.size}件。次回の予定にしました。")
+        say("棚卸を終えました。確認 ${sum.checked}件（うち場所違い ${sum.checkedMoved}件）、未確認 ${sum.missed}件、想定外 ${sum.unexpected}件。次回の予定にしました。")
+    }
+
+    /** 直前に「棚卸を終える」を押す前の状態（取り消し用。直後の1回だけ。端末を閉じると消える） */
+    private var lastFinish by mutableStateOf<InventoryState?>(null)
+
+    val canUndoFinish: Boolean get() = lastFinish != null
+
+    /** 「棚卸を終える」を取り消す。終える前の状態（予定・確認済み・場所違い・想定外）に戻す。 */
+    fun undoFinish() {
+        val before = lastFinish ?: return
+        apply(before)
+        lastFinish = null
+        targetToken = null
+        stopRoute()
+        say("「棚卸を終える」を取り消しました。終える前の状態に戻しました。")
+    }
+
+    /** 確かめた備品を、未確認に戻す（間違えて読んだとき）。場所違いの記録も消える。 */
+    fun unconfirmItem(token: String) {
+        if (token !in confirmed) return
+        apply(Inventory.unconfirm(snapshot(), token))
+        if (routeMode) startRoute()
+        say("「${items.firstOrNull { it.token == token }?.placed?.name ?: token}」を、未確認に戻しました。")
+    }
+
+    private fun snapshot() = InventoryState(items.toList(), confirmed, moved, unexpected)
+
+    private fun apply(s: InventoryState) {
+        items.clear()
+        items.addAll(s.items)
+        persist()
+        updateConfirmed(s.confirmed)
+        updateMoved(s.moved)
+        updateUnexpected(s.unexpected)
     }
 
     private fun persist() {
@@ -333,6 +346,7 @@ class AppModel(
         }
 
         // 棚卸：備品のQRを読んだら、確かめた備品にする。アンカーを読む前でも、確かめることはできる
+        lastFinish = null // 新しく読んだら、前の「棚卸を終える」は取り消せない
         val posNow = if (engine.hasReference() && !l.lostTracking) engine.mapAt(pose) else null
         val placed = items.firstOrNull { it.token == ref.token }?.placed
         if (placed == null) {
@@ -343,10 +357,11 @@ class AppModel(
             return say("「$name」は、予定にありません。想定外として記録しました。" + if (first) "" else "（記録済み）", false)
         }
         // 別の階の備品は、位置の目印にしない（座標が別）。確かめることだけはできる
-        val otherFloor = floor != null && placed.floor != floor
+        val j = Inventory.judgeMoved(placed, floor, posNow?.first, posNow?.second)
+        val otherFloor = j.otherFloor
         val already = ref.token in confirmed
-        val gap = if (posNow != null && !otherFloor) hypot(posNow.first - placed.x, posNow.second - placed.y) else null
-        val isMoved = otherFloor || (gap != null && gap >= MOVED_THRESHOLD_M)
+        val gap = j.gapM
+        val isMoved = j.isMoved
         updateMoved(
             if (isMoved) moved + (ref.token to MovedAt(ref.token, floor ?: placed.floor, posNow?.first, posNow?.second))
             else moved - ref.token,

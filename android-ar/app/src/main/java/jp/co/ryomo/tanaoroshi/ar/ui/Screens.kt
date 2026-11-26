@@ -361,6 +361,7 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
                 ) {
                     Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (it.token in model.confirmed) StatusBadge("確認済み", Tone.OK) else StatusBadge("未確認", Tone.WARN)
+                        if (it.token in model.confirmed) TextButton(onClick = { model.unconfirmItem(it.token) }) { Text("未確認に戻す", fontSize = 12.sp) }
                         if (it.token in model.moved) StatusBadge("場所違い", Tone.ERROR)
                         if (it.placed.missedLast && it.token !in model.confirmed) StatusBadge("前回未確認", Tone.WARN)
                         if (it.placed.wasUnexpected) StatusBadge("前回 想定外", Tone.INFO)
@@ -601,6 +602,10 @@ private fun FinishPanel(model: AppModel) {
                         fontSize = 14.sp, color = cs.onSurface,
                     )
                 }
+            }
+            if (model.canUndoFinish) {
+                Spacer(Modifier.height(12.dp))
+                SecondaryButton("「棚卸を終える」を取り消す") { model.undoFinish() }
             }
             Spacer(Modifier.height(12.dp))
             PrimaryButton("棚卸を終える", enabled = model.items.isNotEmpty()) {
