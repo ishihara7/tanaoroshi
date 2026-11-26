@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block title %}位置の基準点{% endblock %}
+{% block content %}
+{% if not anchor %}
+<h1>このタグは使えません</h1>
+<p class="err">登録されていないか、廃止された基準点のタグです。管理者に確認してください。</p>
+{% else %}
+<h1>{{ anchor.name }}</h1>
+<p class="note">位置の基準点（{{ anchor.floor }}階）</p>
+<p>これは、屋内の位置を合わせるためのタグです。備品の位置を記録するアプリで、この場所のタグを読み取ってください。</p>
+<p><a href="/">ホームへ</a></p>
+{% endif %}
+{% endblock %}

@@ -1,7 +1,7 @@
 """テーブル定義。"""
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Float, Integer, String, Unicode
+from sqlalchemy import Boolean, DateTime, Float, Integer, String, Unicode, UnicodeText
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.crypto import EncryptedFloat
@@ -64,3 +64,76 @@ class Scan(Base):
     error_message: Mapped[str] = mapped_column(Unicode(200), default="")
     user_agent: Mapped[str] = mapped_column(Unicode(300), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, index=True)
+
+
+class Anchor(Base):
+    """屋内の位置の基準点（壁や柱に貼るNFCタグ／QR）。座標は、フロア図上のメートル（x：東、y：北）。
+    アプリは、アンカーを読み取った時点で、自分の位置をこの座標に合わせる。"""
+
+    __tablename__ = "anchors"
+
+    anchor_token: Mapped[str] = mapped_column(String(20), primary_key=True)  # タグのURLに使う（推測されにくい文字列）
+    name: Mapped[str] = mapped_column(Unicode(100))  # 例：2F 東階段前
+    floor: Mapped[int] = mapped_column(Integer)  # 階（地下は負の数）
+    x_m: Mapped[float] = mapped_column(Float)
+    y_m: Mapped[float] = mapped_column(Float)
+    # QRを読むとき、利用者が向く方向（壁に正対する向き）。北を0°とした時計回り。コンパスの向きの較正に使う。未設定ならNULL
+    facing_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class ArItem(Base):
+    """AR棚卸の「予定」の1件。備品のタグ（token）ごとに、階とフロア図上の位置を持つ。
+
+    棚卸を終えるたびに、今回の結果で更新される（結果が、次回の予定になる）。
+    """
+
+    __tablename__ = "ar_items"
+
+    token: Mapped[str] = mapped_column(String(40), primary_key=True)
+    asset_no: Mapped[str | None] = mapped_column(String(20), nullable=True, index=True)  # 台帳にあれば、その管理番号
+    name: Mapped[str] = mapped_column(Unicode(100))
+    floor: Mapped[int] = mapped_column(Integer, default=1)
+    x: Mapped[float] = mapped_column(Float, default=0.0)
+    y: Mapped[float] = mapped_column(Float, default=0.0)
+    err_m: Mapped[float] = mapped_column(Float, default=0.0)
+    located: Mapped[bool] = mapped_column(Boolean, default=True)  # 位置が分かっているか（想定外を位置なしで読んだら False）
+    missed_last: Mapped[bool] = mapped_column(Boolean, default=False)  # 前回の棚卸で、確かめられなかった
+    was_unexpected: Mapped[bool] = mapped_column(Boolean, default=False)  # 前回の棚卸で、予定にないのに読まれた
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class Inventory(Base):
+    """棚卸の1回分。開いている（open）のは、常に1つだけ。終える（closed）と、結果が予定に反映される。"""
+
+    __tablename__ = "inventories"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    status: Mapped[str] = mapped_column(String(10), default="open")  # open | closed
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_by: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 終えたユーザーのID
+    summary_json: Mapped[str | None] = mapped_column(UnicodeText, nullable=True)  # 終えたときの件数
+    before_json: Mapped[str | None] = mapped_column(UnicodeText, nullable=True)  # 終える前の予定（取り消し用・結果表示用）
+
+
+class InventoryRecord(Base):
+    """棚卸で、備品のQRを読んだ（または手入力した）記録。追記のみ。client_id で、再送しても二重にならない。"""
+
+    __tablename__ = "inventory_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    client_id: Mapped[str] = mapped_column(String(40), unique=True)  # 端末で作る一意のID
+    inventory_id: Mapped[int] = mapped_column(Integer, index=True)
+    kind: Mapped[str] = mapped_column(String(10))  # read：読んだ／unconfirm：未確認に戻した
+    token: Mapped[str] = mapped_column(String(40), index=True)
+    method: Mapped[str] = mapped_column(String(10), default="qr")  # qr | manual
+    floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    moved: Mapped[bool] = mapped_column(Boolean, default=False)  # 端末の判定：予定と違う場所で読んだ
+    user_id: Mapped[int] = mapped_column(Integer)
+    employee_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    read_at: Mapped[datetime] = mapped_column(DateTime)  # 端末の時刻（UTC）
+    received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

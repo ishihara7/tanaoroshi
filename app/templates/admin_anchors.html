@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}アンカー{% endblock %}
+{% block content %}
+<h1>アンカー（位置合わせの基準点）</h1>
+<p class="note">棚卸アプリで、アンカーのQRを読むと、その場所と向きにAR上の位置を合わせます。階ごとに1つ以上、壁などに貼ります。</p>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/anchors">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label for="name">名前</label>
+  <input id="name" name="name" maxlength="100" placeholder="例：1階の入口" required>
+  <label for="floor">階（地下は負の数）</label>
+  <input id="floor" name="floor" type="number" min="-9" max="99" value="1" required>
+  <label for="x">位置 東（m）</label>
+  <input id="x" name="x" type="number" step="any" value="0">
+  <label for="y">位置 北（m）</label>
+  <input id="y" name="y" type="number" step="any" value="0">
+  <label for="facing_deg">QRを読むとき向く方向（北を0°とした時計回り。分からなければ空欄）</label>
+  <input id="facing_deg" name="facing_deg" type="number" step="any">
+  <p class="hint">位置は、フロア図上の原点からの距離です。階ごとに、原点（0, 0）を決めておきます。</p>
+  <p><button type="submit">登録</button></p>
+</form>
+
+<table>
+  <tr><th>階</th><th>名前</th><th></th></tr>
+  {% for a in anchors %}
+  <tr>
+    <td>{{ a.floor }}階</td>
+    <td>{{ a.name }}{% if not a.is_active %}（停止中）{% endif %}</td>
+    <td><a href="/admin/anchors/{{ a.anchor_token }}">編集・QR</a></td>
+  </tr>
+  {% else %}
+  <tr><td colspan="3" class="note">アンカーは、まだありません。</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}

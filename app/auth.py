@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
-from fastapi import Depends, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.db import get_session
@@ -93,3 +93,21 @@ def require_admin(user: User = Depends(current_user)) -> User:
     if user.role != "admin":
         raise RedirectRequired("/")
     return user
+
+
+# ---- アプリ（JSON API）向け：リダイレクトではなく、401・403 を返す ----
+def api_user(request: Request, session: Session = Depends(get_session)) -> User:
+    uid = request.session.get("uid")
+    user = session.get(User, uid) if uid else None
+    if user is None or not user.is_active:
+        request.session.clear()
+        raise HTTPException(401, "ログインしてください。")
+    if user.must_change_password:
+        raise HTTPException(403, "先にパスワードを変更してください。")
+    return user
+
+
+def api_csrf(request: Request) -> None:
+    """更新系のAPIで、X-CSRF-Token ヘッダーを確かめる。"""
+    if not check_csrf(request, request.headers.get("x-csrf-token")):
+        raise HTTPException(403, "画面の有効期限が切れました。取得し直してください。")
