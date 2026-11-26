@@ -131,6 +131,16 @@ data class TagRef(val isAnchor: Boolean, val token: String)
 
 private val TAG_URL = Regex("^https?://[^/\\s]+/(a|i)/([A-Za-z0-9_-]{1,40})/?(?:[?#].*)?$")
 
+/** 管理画面の「端末の登録」のQR。server：サーバーのアドレス（http(s)://ホスト:ポート）、code：設定コード。 */
+data class SetupRef(val server: String, val code: String)
+
+private val SETUP_URL = Regex("^(https?://[^/\\s]+)/setup/([A-Za-z0-9_-]{16,64})/?$")
+
+fun parseSetupUrl(text: String): SetupRef? {
+    val m = SETUP_URL.matchEntire(text.trim()) ?: return null
+    return SetupRef(m.groupValues[1], m.groupValues[2])
+}
+
 fun parseTagUrl(text: String): TagRef? {
     val m = TAG_URL.matchEntire(text.trim()) ?: return null
     return TagRef(m.groupValues[1] == "a", m.groupValues[2])

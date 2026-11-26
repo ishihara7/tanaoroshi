@@ -29,6 +29,7 @@ import jp.co.ryomo.tanaoroshi.ar.ui.HomeScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.RegisterScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.InventoryScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.SettingsScreen
+import jp.co.ryomo.tanaoroshi.ar.ui.SetupScreen
 import jp.co.ryomo.tanaoroshi.ar.ui.TanaoroshiTheme
 
 /**
@@ -136,6 +137,7 @@ private fun AppRoot(model: AppModel, glView: GLSurfaceView) {
             Screen.REGISTER -> RegisterScreen(model) { cam = it }
             Screen.INVENTORY -> InventoryScreen(model) { cam = it }
             Screen.SETTINGS -> SettingsScreen(model)
+            Screen.SETUP -> SetupScreen(model) { cam = it }
         }
     }
 }

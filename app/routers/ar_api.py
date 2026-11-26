@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app import auth
 from app.db import get_session
 from app.models import Anchor, ArItem, Asset, Inventory, InventoryRecord, User, utcnow
+from app.services import devices
 from app.services import inventories as svc
 
 router = APIRouter(prefix="/api/ar")
@@ -178,3 +179,20 @@ def undo_finish(inventory_id: int, user: User = Depends(auth.api_user), _csrf: N
     if problem:
         raise HTTPException(409, problem)
     return {"ok": True}
+
+
+class EnrollIn(BaseModel):
+    code: str = Field(min_length=16, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+
+
+@router.post("/enroll")
+def enroll(body: EnrollIn, session: Session = Depends(get_session)):
+    """設定コード（管理画面のQR）を、端末トークンに引き換える。ログインは要らない（コードが、その代わり）。
+
+    トークンは、この応答でだけ見える。以降、アプリは Authorization: Bearer <トークン> で通信する。
+    """
+    redeemed = devices.redeem_code(session, body.code)
+    if redeemed is None:
+        raise HTTPException(400, "設定用のQRが、無効です（期限切れ・使用済みの可能性があります）。管理画面で、もう一度発行してください。")
+    token, user = redeemed
+    return {"token": token, "login_id": user.login_id}

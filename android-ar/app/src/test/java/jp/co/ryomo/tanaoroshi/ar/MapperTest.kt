@@ -66,3 +66,35 @@ class MapperTest {
         assertTrue(ErrorModel.estimate(10.0) > ErrorModel.estimate(0.0))
     }
 }
+
+class SetupUrlTest {
+    private val code = "abcDEF0123456789_-abcDEF0123456789"
+
+    @Test
+    fun 設定用のQRから_サーバーと設定コードを読み取る() {
+        val r = parseSetupUrl("https://tanaoroshi.azurewebsites.net/setup/$code")!!
+        assertEquals("https://tanaoroshi.azurewebsites.net", r.server)
+        assertEquals(code, r.code)
+    }
+
+    @Test
+    fun ポート付きのHTTPも読み取れる() {
+        val r = parseSetupUrl("  http://192.168.128.100:8765/setup/$code/ ")!!
+        assertEquals("http://192.168.128.100:8765", r.server)
+    }
+
+    @Test
+    fun 設定用でないURLは読み取らない() {
+        assertEquals(null, parseSetupUrl("https://example.com/i/Tnote01"))
+        assertEquals(null, parseSetupUrl("https://example.com/a/Aabc"))
+        assertEquals(null, parseSetupUrl("https://example.com/setup/short"))
+        assertEquals(null, parseSetupUrl("https://example.com/setup/$code?x=1"))
+        assertEquals(null, parseSetupUrl("ftp://example.com/setup/$code"))
+        assertEquals(null, parseSetupUrl("設定"))
+    }
+
+    @Test
+    fun 備品とアンカーのQRは_設定用として扱わない() {
+        assertEquals(null, parseTagUrl("https://example.com/setup/$code"))
+    }
+}

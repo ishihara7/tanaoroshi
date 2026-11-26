@@ -57,6 +57,7 @@ import jp.co.ryomo.tanaoroshi.ar.SyncStatus
 import jp.co.ryomo.tanaoroshi.ar.compassLabel
 import jp.co.ryomo.tanaoroshi.ar.distanceAndBearing
 import jp.co.ryomo.tanaoroshi.ar.floorLabel
+import jp.co.ryomo.tanaoroshi.ar.label
 
 /** カメラ映像の縦横比（幅:高さ = 3:4）。切り取らずに、視野の全体を出す。 */
 private const val CAMERA_ASPECT = 3f / 4f
@@ -130,7 +131,7 @@ fun HomeScreen(model: AppModel) {
                 SectionLabel("最近の登録")
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     model.items.takeLast(3).reversed().forEach {
-                        AssetRow(it.placed.name, "%s　東%.1f m　北%.1f m　（±%.1f m）".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y, it.placed.errM))
+                        AssetRow(it.placed.label(), "%s　東%.1f m　北%.1f m　（±%.1f m）".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y, it.placed.errM))
                     }
                 }
             }
@@ -288,7 +289,7 @@ fun RegisterScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             model.items.forEach {
                 AssetRow(
-                    name = it.placed.name,
+                    name = it.placed.label(),
                     detail = "%s　東%.1f m　北%.1f m　（±%.1f m）".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y, it.placed.errM),
                 ) { TextButton(onClick = { model.removeItem(it.token) }) { Text("削除", color = MaterialTheme.colorScheme.error) } }
             }
@@ -359,7 +360,7 @@ fun InventoryScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
             model.floorItems.forEach {
                 AssetRow(
-                    name = it.placed.name,
+                    name = it.placed.label(),
                     detail = if (it.placed.located) "%s　東%.1f m　北%.1f m".format(floorLabel(it.placed.floor), it.placed.x, it.placed.y)
                     else "${floorLabel(it.placed.floor)}　位置は不明",
                     selected = it.token == model.targetToken,
@@ -449,6 +450,7 @@ fun SettingsScreen(model: AppModel) {
     var password by remember { mutableStateOf(s.password) }
     var employeeNo by remember { mutableStateOf(s.employeeNo) }
     var threshold by remember { mutableStateOf(s.movedThresholdM.toString()) }
+    var manualLogin by remember { mutableStateOf(false) }
     var advanced by remember { mutableStateOf(false) }
 
     Box(
@@ -464,9 +466,26 @@ fun SettingsScreen(model: AppModel) {
             SectionLabel("サーバー")
             Text("棚卸の記録を送り、予定とアンカーを受け取ります。電波がないときは、端末に溜めて、あとで送ります。", fontSize = 14.sp, color = cs.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
-            TextField("サーバーのURL", "例：https://xxxx.azurewebsites.net", serverUrl, KeyboardType.Uri) { serverUrl = it }
-            TextField("ログインID", null, loginId, KeyboardType.Ascii) { loginId = it }
-            TextField("パスワード", "この端末に保存されます", password, KeyboardType.Password, hide = true) { password = it }
+            if (s.authToken.isNotEmpty()) {
+                StatusBadge("この端末は、登録済みです", Tone.OK)
+                Text(s.serverUrl, fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 8.dp))
+            }
+            PrimaryButton(if (s.authToken.isNotEmpty()) "QRで設定し直す" else "QRで設定する") { model.go(Screen.SETUP) }
+            Text(
+                "PCで管理画面の「端末」→「QRを表示」を開き、そのQRを読み取ります。サーバーのアドレスとログインの設定が、自動で入ります。",
+                fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp, bottom = 8.dp),
+            )
+            if (s.authToken.isNotEmpty()) {
+                SecondaryButton("この端末の登録を解除する") { model.clearDeviceToken() }
+                Spacer(Modifier.height(8.dp))
+            }
+            SecondaryButton(if (manualLogin) "IDとパスワードでの設定を閉じる" else "IDとパスワードで設定する") { manualLogin = !manualLogin }
+            if (manualLogin) {
+                Spacer(Modifier.height(8.dp))
+                TextField("サーバーのURL", "例：https://xxxx.azurewebsites.net", serverUrl, KeyboardType.Uri) { serverUrl = it }
+                TextField("ログインID", null, loginId, KeyboardType.Ascii) { loginId = it }
+                TextField("パスワード", "この端末に保存されます。QRでの設定なら、パスワードは保存されません", password, KeyboardType.Password, hide = true) { password = it }
+            }
             TextField("社員番号（記録した人）", "半角英数字。空でも構いません", employeeNo, KeyboardType.Ascii) { employeeNo = it }
             SyncPanel(model)
 
@@ -499,6 +518,8 @@ fun SettingsScreen(model: AppModel) {
                         facingA = num(facingA, s.facingA), facingB = num(facingB, s.facingB), facingC = num(facingC, s.facingC),
                         cameraRot = num(camRot, s.cameraRot.toDouble()).toInt().coerceIn(-1, 3),
                         serverUrl = serverUrl.trim(), loginId = loginId.trim(), password = password, employeeNo = employeeNo.trim(),
+                        // IDとパスワードを入れたときは、QRで受け取った端末の合言葉は、使わない（どちらか1つ）
+                        authToken = if (manualLogin && password.isNotEmpty()) "" else s.authToken,
                         movedThresholdM = num(threshold, s.movedThresholdM).coerceIn(0.5, 50.0),
                     ),
                 )
@@ -578,7 +599,7 @@ private fun RoutePanel(model: AppModel) {
                 } else {
                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         model.route.forEachIndexed { i, p ->
-                            val name = model.items.firstOrNull { it.token == p.token }?.placed?.name ?: p.token
+                            val name = model.items.firstOrNull { it.token == p.token }?.placed?.label() ?: p.token
                             Text(
                                 "${i + 1}. $name",
                                 fontSize = if (i == 0) 16.sp else 14.sp,
@@ -628,7 +649,7 @@ private fun FinishPanel(model: AppModel) {
                 movedItems.forEach {
                     val m = model.moved.getValue(it.token)
                     Text(
-                        "・${it.placed.name}：${floorLabel(it.placed.floor)} → ${floorLabel(m.floor)}",
+                        "・${it.placed.label()}：${floorLabel(it.placed.floor)} → ${floorLabel(m.floor)}",
                         fontSize = 14.sp, color = cs.onSurface,
                     )
                 }
@@ -722,4 +743,20 @@ private fun TextField(label: String, hint: String?, value: String, type: Keyboar
         modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
         shape = MaterialTheme.shapes.small,
     )
+}
+
+
+// ---------------- QRで設定 ----------------
+
+/** 管理画面の「端末の登録」のQRを読んで、サーバーの設定と、この端末の合言葉を受け取る。 */
+@Composable
+fun SetupScreen(model: AppModel, onCamera: (CameraRect) -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    CameraShell(model, "QRで設定", ghost = false, onCamera = onCamera) {
+        Text("PCで管理画面を開き、「端末」→「QRを表示」を選びます。表示されたQRを、上のカメラに映してください。", fontSize = 15.sp, color = cs.onSurface)
+        Text("QRは、発行から10分以内に、1回だけ使えます。", fontSize = 13.sp, color = cs.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+        MessageBanner(model.message, model.messageOk, Modifier.padding(top = 8.dp))
+        Spacer(Modifier.height(12.dp))
+        SecondaryButton("設定画面へ戻る") { model.go(Screen.SETTINGS) }
+    }
 }

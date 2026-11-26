@@ -6,8 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlin.math.hypot
 
-/** HOME：モードの選択。REGISTER：備品登録モード。INVENTORY：棚卸モード。 */
-enum class Screen { HOME, REGISTER, INVENTORY, SETTINGS }
+/** HOME：モードの選択。REGISTER：備品登録モード。INVENTORY：棚卸モード。SETUP：管理画面のQRで、サーバーを設定する。 */
+enum class Screen { HOME, REGISTER, INVENTORY, SETTINGS, SETUP }
 
 /** 備品の名前（仮）。ここにないトークンは、トークンをそのまま名前にする。 */
 private val ASSET_NAMES = mapOf(
@@ -368,7 +368,48 @@ class AppModel(
             settings.anchors().find { it.token == token }
         }
 
+    /** 設定用のQRを読んで、サーバーの設定と、この端末の合言葉を受け取っている最中か（同じQRを、続けて読んでも、1回だけ処理する） */
+    private var setupBusy = false
+
+    /** 管理画面のQRで、サーバーを設定する。QRのアドレスの設定コードを、端末の合言葉に引き換える（パスワードは、QRにも端末にも入らない）。 */
+    private fun handleSetupQr(text: String) {
+        val ref = parseSetupUrl(text) ?: return say("これは、設定用のQRではありません。管理画面の「端末」で出したQRを読んでください。", false)
+        if (setupBusy) return
+        setupBusy = true
+        say("設定しています…")
+        Thread {
+            val result = try {
+                Result.success(ApiClient(ref.server).enroll(ref.code))
+            } catch (e: Exception) {
+                Result.failure(e)
+            }
+            uiPost {
+                setupBusy = false
+                result.onSuccess { token ->
+                    saveSettings(settings.copy(serverUrl = ref.server, authToken = token, loginId = "", password = ""))
+                    haptic()
+                    say("設定しました。サーバー：${ref.server}")
+                    go(Screen.SETTINGS)
+                    sync.kick()
+                }.onFailure { e ->
+                    say(
+                        if (e is AuthException) e.message ?: "設定用のQRが、無効です。"
+                        else "サーバーに接続できません。同じネットワークにつながっているか、確認してください。",
+                        false,
+                    )
+                }
+            }
+        }.start()
+    }
+
+    /** この端末の登録（合言葉）を、解除する。サーバーの設定は残る。 */
+    fun clearDeviceToken() {
+        saveSettings(settings.copy(authToken = ""))
+        say("この端末の登録を解除しました。")
+    }
+
     fun handleQr(text: String, pose: PoseSnapshot) {
+        if (screen == Screen.SETUP) return handleSetupQr(text)
         if (screen != Screen.REGISTER && screen != Screen.INVENTORY) return
         val ref = parseTagUrl(text) ?: return say("このQRは、このアプリのタグではありません。", false)
 

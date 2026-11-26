@@ -24,6 +24,7 @@ private class MemStorage : SyncStorage {
 private class FakeServer {
     val calls = mutableListOf<String>()
     val cookieSeen = mutableListOf<String?>()
+    val authorizations = mutableListOf<String>()
     val receivedIds = mutableSetOf<String>()
     var inventoryId: Int? = 5
     var refuseRecordsWith = 0 // 0以外なら、記録の送信をそのコードで断る
@@ -37,7 +38,9 @@ private class FakeServer {
             val key = "${ex.requestMethod} ${ex.requestURI.path}"
             calls += key
             cookieSeen += ex.requestHeaders.getFirst("Cookie")
-            val authed = ex.requestHeaders.getFirst("Cookie")?.contains("session=ok") == true
+            ex.requestHeaders.getFirst("Authorization")?.let { authorizations += it }
+            val authed = ex.requestHeaders.getFirst("Cookie")?.contains("session=ok") == true ||
+                ex.requestHeaders.getFirst("Authorization") == "Bearer DEVTOKEN1"
             when {
                 key == "GET /login" -> {
                     ex.responseHeaders.add("Set-Cookie", "session=anon; path=/; HttpOnly")
@@ -48,6 +51,9 @@ private class FakeServer {
                     ex.responseHeaders.add("Location", "/")
                     reply(ex, 303, "")
                 } else reply(ex, 400, "bad", "text/html")
+                key == "POST /api/ar/enroll" -> if (JSONObject(body).optString("code") == "validcode0123456789") {
+                    reply(ex, 200, """{"token":"DEVTOKEN1","login_id":"taro"}""")
+                } else reply(ex, 400, """{"detail":"設定用のQRが、無効です。"}""")
                 !authed -> reply(ex, 401, """{"detail":"ログインしてください。"}""")
                 key == "GET /api/ar/plan" -> reply(ex, 200, plan())
                 ex.requestHeaders.getFirst("X-CSRF-Token") != "CSRF1" -> reply(ex, 403, """{"detail":"画面の有効期限が切れました。"}""")
@@ -225,5 +231,58 @@ class SyncTest {
         assertTrue(storage.outbox.isEmpty())
         assertEquals(setOf("r1", "r2"), server.receivedIds)
         assertFalse(statuses.isEmpty())
+    }
+
+    // ---- 端末の合言葉（QRで設定） ----
+
+    @Test
+    fun 合言葉があれば_ログインせずに送る() {
+        settings = Settings(serverUrl = server.url, authToken = "DEVTOKEN1")
+        storage.outbox = listOf(rec("r1"))
+        controller().runOnce()
+        assertEquals(SyncState.OK, statuses.last().state)
+        assertTrue(storage.outbox.isEmpty())
+        assertEquals(0, server.count("GET /login"))
+        assertEquals(0, server.count("POST /login"))
+        assertTrue(server.authorizations.all { it == "Bearer DEVTOKEN1" })
+    }
+
+    @Test
+    fun 合言葉が無効なら_登録のやり直しを案内する() {
+        settings = Settings(serverUrl = server.url, authToken = "WRONG")
+        storage.outbox = listOf(rec("r1"))
+        controller().runOnce()
+        assertEquals(SyncState.AUTH_ERROR, statuses.last().state)
+        assertTrue(statuses.last().message.contains("設定し直して"))
+        assertEquals(1, storage.outbox.size)
+    }
+
+    @Test
+    fun 合言葉があれば_IDとパスワードがなくても_設定済み() {
+        settings = Settings(serverUrl = server.url, authToken = "DEVTOKEN1", loginId = "", password = "")
+        controller().runOnce()
+        assertEquals(SyncState.OK, statuses.last().state)
+    }
+
+    @Test
+    fun 合言葉だけでURLがなければ_未設定() {
+        settings = Settings(serverUrl = "", authToken = "DEVTOKEN1")
+        controller().runOnce()
+        assertEquals(SyncState.NOT_CONFIGURED, statuses.last().state)
+    }
+
+    @Test
+    fun 設定コードを合言葉に引き換える() {
+        assertEquals("DEVTOKEN1", ApiClient(server.url).enroll("validcode0123456789"))
+    }
+
+    @Test
+    fun 無効な設定コードは_サーバーのメッセージ付きで断られる() {
+        try {
+            ApiClient(server.url).enroll("expiredcode000000000")
+            org.junit.Assert.fail("例外が出るはず")
+        } catch (e: AuthException) {
+            assertEquals("設定用のQRが、無効です。", e.message)
+        }
     }
 }

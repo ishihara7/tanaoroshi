@@ -137,3 +137,31 @@ class InventoryRecord(Base):
     employee_no: Mapped[str | None] = mapped_column(String(20), nullable=True)
     read_at: Mapped[datetime] = mapped_column(DateTime)  # 端末の時刻（UTC）
     received_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class DeviceToken(Base):
+    """棚卸アプリの端末ごとの合言葉（トークン）。パスワードの代わりに、端末に保存する。DBには、ハッシュだけを保存する。"""
+
+    __tablename__ = "device_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True)  # SHA-256（16進）
+    label: Mapped[str] = mapped_column(Unicode(100), default="")  # 端末の名前（管理画面で見分けるため）
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # 無効にした時刻（紛失したとき）
+
+
+class EnrollCode(Base):
+    """端末の登録用の、短時間・1回だけ使えるコード。管理画面のQRに入る。DBには、ハッシュだけを保存する。"""
+
+    __tablename__ = "enroll_codes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(Integer, index=True)
+    code_hash: Mapped[str] = mapped_column(String(64), unique=True)
+    label: Mapped[str] = mapped_column(Unicode(100), default="")
+    expires_at: Mapped[datetime] = mapped_column(DateTime)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

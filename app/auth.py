@@ -97,17 +97,29 @@ def require_admin(user: User = Depends(current_user)) -> User:
 
 # ---- アプリ（JSON API）向け：リダイレクトではなく、401・403 を返す ----
 def api_user(request: Request, session: Session = Depends(get_session)) -> User:
-    uid = request.session.get("uid")
-    user = session.get(User, uid) if uid else None
-    if user is None or not user.is_active:
-        request.session.clear()
-        raise HTTPException(401, "ログインしてください。")
+    """アプリ（JSON API）のユーザー。端末トークン（Authorization: Bearer）か、ログインのセッションで確かめる。"""
+    from app.services import devices  # 循環参照を避けるため、ここで読み込む
+
+    header = request.headers.get("authorization", "")
+    if header[:7].lower() == "bearer ":
+        user = devices.user_for_token(session, header[7:].strip())
+        if user is None:
+            raise HTTPException(401, "この端末の登録が無効です。設定し直してください。")
+        request.state.bearer = True
+    else:
+        uid = request.session.get("uid")
+        user = session.get(User, uid) if uid else None
+        if user is None or not user.is_active:
+            request.session.clear()
+            raise HTTPException(401, "ログインしてください。")
     if user.must_change_password:
         raise HTTPException(403, "先にパスワードを変更してください。")
     return user
 
 
 def api_csrf(request: Request) -> None:
-    """更新系のAPIで、X-CSRF-Token ヘッダーを確かめる。"""
+    """更新系のAPIで、X-CSRF-Token ヘッダーを確かめる。端末トークンの通信は、ブラウザが勝手に付けるものではないので、不要。"""
+    if getattr(request.state, "bearer", False):
+        return
     if not check_csrf(request, request.headers.get("x-csrf-token")):
         raise HTTPException(403, "画面の有効期限が切れました。取得し直してください。")

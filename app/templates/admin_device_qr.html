@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}端末の登録QR{% endblock %}
+{% block content %}
+<h1>端末の登録QR</h1>
+<p>ユーザー「{{ target.login_id }}」{% if label %}／端末「{{ label }}」{% endif %}</p>
+<p><img src="{{ qr }}" alt="端末の設定用QRコード" width="260" height="260" style="border:1px solid var(--line);background:#fff"></p>
+<p>棚卸アプリの「設定」→「QRで設定する」を開き、このQRを読み取ってください。</p>
+<p class="note">{{ minutes }}分以内に、1回だけ使えます。このページを閉じると、同じQRは、もう表示できません（必要なら、もう一度発行してください）。QRを、他の人に見せたり、写真に残したりしないでください。</p>
+<p><a href="/admin/devices">端末の一覧へ</a></p>
+{% endblock %}

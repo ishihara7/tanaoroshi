@@ -42,7 +42,7 @@ class SyncController(
     private val onPlan: (ServerPlan) -> Unit,
     private val onStatus: (SyncStatus) -> Unit,
     private val newItemErrM: () -> Double = { ErrorModel.ANCHOR_ERR_M },
-    private val clientFactory: (String) -> ApiClient = { ApiClient(it) },
+    private val clientFactory: (Settings) -> ApiClient = { ApiClient(it.serverUrl, it.authToken.ifEmpty { null }) },
     private val now: () -> Long = System::currentTimeMillis,
 ) {
     private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "sync").apply { isDaemon = true } }
@@ -78,13 +78,14 @@ class SyncController(
     /** 1回の送信。テストから呼べるように公開している。 */
     fun runOnce() {
         val s = settings()
-        if (s.serverUrl.isBlank() || s.loginId.isBlank() || s.password.isEmpty()) {
-            return publish(SyncState.NOT_CONFIGURED, "サーバーのURL・ログインID・パスワードを、設定してください。")
+        val hasToken = s.authToken.isNotEmpty()
+        if (s.serverUrl.isBlank() || (!hasToken && (s.loginId.isBlank() || s.password.isEmpty()))) {
+            return publish(SyncState.NOT_CONFIGURED, "設定の「QRで設定する」で、管理画面のQRを読み取ってください。")
         }
         publish(SyncState.SYNCING)
         try {
-            val client = clientFactory(s.serverUrl)
-            client.login(s.loginId, s.password)
+            val client = clientFactory(s)
+            if (!hasToken) client.login(s.loginId, s.password) // 端末の合言葉があれば、ログインは要らない
             client.getPlan() // CSRFトークンを受け取る
             while (true) {
                 val batch = Outbox.nextBatch(store.loadOutbox())

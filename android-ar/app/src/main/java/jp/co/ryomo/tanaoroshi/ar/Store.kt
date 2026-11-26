@@ -16,6 +16,9 @@ data class Placed(
     val assetNo: String? = null,
 )
 
+/** 一覧に出す名前。台帳の管理番号があれば、「管理番号　名称」。 */
+fun Placed.label(): String = assetNo?.let { "$it　$name" } ?: name
+
 /** 棚卸で、予定にないのに読んだ備品。位置が取れなければ x・y は null。 */
 data class Unexpected(val token: String, val name: String, val floor: Int, val x: Double?, val y: Double?)
 
@@ -39,6 +42,8 @@ data class Settings(
     val serverUrl: String = "",
     val loginId: String = "",
     val password: String = "",
+    /** 端末の合言葉（管理画面のQRで設定する）。あれば、ログインID・パスワードの代わりに使う */
+    val authToken: String = "",
     /** 記録した人の社員番号（半角英数字。空でもよい） */
     val employeeNo: String = "",
     /** 同じ階で、登録位置からこれ以上離れて読んだら「場所違い」（m） */
@@ -65,6 +70,7 @@ class Store(context: Context) : SyncStorage {
             serverUrl = prefs.getString("serverUrl", d.serverUrl) ?: "",
             loginId = prefs.getString("loginId", d.loginId) ?: "",
             password = prefs.getString("password", d.password) ?: "",
+            authToken = prefs.getString("authToken", d.authToken) ?: "",
             employeeNo = prefs.getString("employeeNo", d.employeeNo) ?: "",
             movedThresholdM = prefs.getFloat("movedThresholdM", d.movedThresholdM.toFloat()).toDouble(),
         )
@@ -75,7 +81,7 @@ class Store(context: Context) : SyncStorage {
             .putFloat("facingA", s.facingA.toFloat()).putFloat("facingB", s.facingB.toFloat())
             .putFloat("facingC", s.facingC.toFloat())
             .putInt("cameraRot", s.cameraRot)
-            .putString("serverUrl", s.serverUrl).putString("loginId", s.loginId).putString("password", s.password)
+            .putString("serverUrl", s.serverUrl).putString("loginId", s.loginId).putString("password", s.password).putString("authToken", s.authToken)
             .putString("employeeNo", s.employeeNo).putFloat("movedThresholdM", s.movedThresholdM.toFloat())
             .apply()
     }

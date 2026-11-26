@@ -27,7 +27,7 @@ data class RecordResult(val clientId: String, val status: String, val message: S
  * サーバー（FastAPI）との通信。ログインは、既存の画面と同じ（Cookie のセッション＋CSRF）。
  * ネットワークの失敗は IOException。1つのインスタンスは、1つのスレッドから使う。
  */
-class ApiClient(baseUrl: String, private val timeoutMs: Int = 15000) {
+class ApiClient(baseUrl: String, private val token: String? = null, private val timeoutMs: Int = 15000) {
     private val base = baseUrl.trim().trimEnd('/')
     private val cookies = LinkedHashMap<String, String>()
     private var csrf = ""
@@ -43,6 +43,7 @@ class ApiClient(baseUrl: String, private val timeoutMs: Int = 15000) {
             c.instanceFollowRedirects = false
             c.setRequestProperty("Accept", "application/json, text/html")
             if (cookies.isNotEmpty()) c.setRequestProperty("Cookie", cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+            if (!token.isNullOrEmpty()) c.setRequestProperty("Authorization", "Bearer $token")
             if (withCsrf) c.setRequestProperty("X-CSRF-Token", csrf)
             if (body != null) {
                 c.doOutput = true
@@ -66,7 +67,9 @@ class ApiClient(baseUrl: String, private val timeoutMs: Int = 15000) {
     }
 
     private fun check(r: Resp): Resp {
-        if (r.code == 401) throw AuthException("ログインが切れました。")
+        if (r.code == 401) {
+            throw AuthException(if (token.isNullOrEmpty()) "ログインが切れました。" else "この端末の登録が無効です。管理画面のQRで、設定し直してください。")
+        }
         if (r.code in 200..299) return r
         val msg = try { JSONObject(r.body).optString("detail", "") } catch (e: Exception) { "" }
         if (r.code == 403 && msg.contains("画面の有効期限")) throw AuthException("画面の有効期限が切れました。")
@@ -85,6 +88,19 @@ class ApiClient(baseUrl: String, private val timeoutMs: Int = 15000) {
         val r = request("POST", "/login", form.toByteArray(), "application/x-www-form-urlencoded")
         if (r.code != 303) throw AuthException("IDまたはパスワードが違います。")
         if (r.location?.endsWith("/account/password") == true) throw AuthException("先に、Webでパスワードを変更してください。")
+    }
+
+    /**
+     * 管理画面のQRの設定コードを、端末の合言葉（トークン）に引き換える。ログインは要らない。
+     * コードが無効（期限切れ・使用済み）なら AuthException。
+     */
+    fun enroll(code: String): String {
+        val r = request("POST", "/api/ar/enroll", JSONObject().put("code", code).toString().toByteArray())
+        if (r.code != 200) {
+            val msg = try { JSONObject(r.body).optString("detail", "") } catch (e: Exception) { "" }
+            throw AuthException(msg.ifEmpty { "設定用のQRが、無効です（${r.code}）。" })
+        }
+        return JSONObject(r.body).getString("token")
     }
 
     /** 予定・アンカー・開いている棚卸を取得する（CSRFトークンも、ここで受け取る）。 */
