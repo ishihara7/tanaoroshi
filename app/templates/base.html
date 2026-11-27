@@ -150,6 +150,7 @@
     pre { margin: 0; }
     @media (min-width: 640px) { .actions { grid-template-columns: 1fr 1fr; } }
   </style>
+  {% block head %}{% endblock %}
 </head>
 <body>
   {% if user %}
@@ -172,7 +173,11 @@
       <a href="/attention" class="{{ 'active' if p.startswith('/attention') }}">要確認</a>
       {% if user.role == 'admin' %}
       <a href="/admin/assets" class="{{ 'active' if p.startswith('/admin/assets') or p.startswith('/admin/labels') or p.startswith('/admin/export') }}">備品の管理</a>
-      <a href="/admin/users" class="{{ 'active' if p.startswith('/admin/users') }}">ユーザー</a>
+      <a href="/admin/inventories" class="{{ 'active' if p.startswith('/admin/inventories') }}">棚卸の結果</a>
+      <a href="/admin/devices" class="{{ 'active' if p.startswith('/admin/devices') }}">端末</a>
+      <a href="/admin/anchors" class="{{ 'active' if p.startswith('/admin/anchors') }}">アンカー</a>
+      <a href="/admin/models" class="{{ 'active' if p.startswith('/admin/models') }}">3Dモデル</a>
+      <a href="/admin/users"class="{{ 'active' if p.startswith('/admin/users') }}">ユーザー</a>
       {% endif %}
       <a href="/account/password" class="{{ 'active' if p.startswith('/account') }}">パスワード</a>
     </nav>

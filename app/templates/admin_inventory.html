@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}棚卸の結果{% endblock %}
+{% block content %}
+<h1>棚卸　{{ inv.started_at|jst }}</h1>
+<p class="note">{% if inv.status == 'open' %}進行中（記録が届くたびに、更新されます）{% else %}{{ inv.closed_at|jst }} に終了。この結果が、次回の予定になっています。{% endif %}</p>
+<div class="chips">
+  <a href="/admin/inventories/{{ inv.id }}/export.csv">CSVでダウンロード</a>
+  <a href="/admin/inventories">一覧へ</a>
+  {% for f in model_floors %}<a href="/admin/models/{{ f }}?inv={{ inv.id }}">{{ f }}階を3Dで見る</a>{% endfor %}
+</div>
+<p>確認済み {{ groups['確認済み']|length }}件（うち場所違い {{ moved|length }}件）／未確認 {{ groups['未確認']|length }}件／想定外 {{ groups['想定外']|length }}件</p>
+
+{% for kind in ['未確認', '想定外', '確認済み'] %}
+<h2>{{ kind }}（{{ groups[kind]|length }}件）</h2>
+<table>
+  <tr><th>管理番号／タグ</th><th>名称</th><th>階</th><th></th></tr>
+  {% for r in groups[kind] %}
+  <tr>
+    <td>{{ r.asset_no or r.token }}</td>
+    <td>{{ r.name }}</td>
+    <td>{{ r.floor }}</td>
+    <td>{% if r.moved %}場所違い {% endif %}{% if r.missed_last %}前回未確認 {% endif %}{% if r.method == 'manual' %}手入力{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="note">ありません。</td></tr>
+  {% endfor %}
+</table>
+{% endfor %}
+{% endblock %}

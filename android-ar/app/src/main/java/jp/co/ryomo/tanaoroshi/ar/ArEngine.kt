@@ -1,0 +1,505 @@
+package jp.co.ryomo.tanaoroshi.ar
+
+import android.app.Activity
+import android.opengl.GLES11Ext
+import android.opengl.GLES20
+import android.opengl.GLSurfaceView
+import com.google.ar.core.ArCoreApk
+import com.google.ar.core.Config
+import com.google.ar.core.Coordinates2d
+import com.google.ar.core.Session
+import com.google.ar.core.TrackingState
+import com.google.ar.core.exceptions.NotYetAvailableException
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
+import com.google.zxing.qrcode.QRCodeReader
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+import java.util.concurrent.Executors
+import javax.microedition.khronos.egl.EGLConfig
+import javax.microedition.khronos.opengles.GL10
+import kotlin.math.abs
+import kotlin.math.hypot
+
+/** QRを読んだ瞬間の、カメラの位置と向き（ARの世界座標）。 */
+class PoseSnapshot(val px: Double, val pz: Double, val fx: Double, val fz: Double, val py: Double = 0.0)
+
+/** いまの状態（GLスレッドが更新し、画面が読む）。 */
+class Live(
+    val tracking: Boolean,
+    val trackingNote: String,
+    /** アンカーのQRを読んでいれば、フロア図上の位置と向き。なければ null */
+    val mapX: Double?,
+    val mapY: Double?,
+    val bearing: Double?,
+    val walkedM: Double,
+    /** 追跡が途切れたことがある（アンカーを読み直すまで、位置を信用できない） */
+    val lostTracking: Boolean,
+    /** いま見えている特徴点の数（少ないと、追跡が途切れやすい）。不明は -1 */
+    val points: Int = -1,
+    /** いまの、床からの高さ（m）。アンカーのQRを読んでいれば。なければ null */
+    val mapZ: Double? = null,
+)
+
+/**
+ * ARCoreを動かし、カメラ映像を出し、QRを読み、フロア図上の位置を計算する。
+ * ARCoreは、GLスレッドで update() を呼ぶ必要がある（GLSurfaceView.Renderer を兼ねる）。
+ */
+class ArEngine(
+    private val activity: Activity,
+    private val onQr: (text: String, pose: PoseSnapshot) -> Unit,
+) : GLSurfaceView.Renderer {
+
+    private var session: Session? = null
+    private var installRequested = false
+
+    @Volatile var live = Live(false, "ARを準備しています…", null, null, null, 0.0, false)
+        private set
+
+    @Volatile private var reference: ArReference? = null
+
+    /** 追跡が途切れた瞬間の、フロア図上の方角（北を0°とした時計回り） */
+    private var lossBearing = 0.0
+
+    /** 追跡が戻ったときの、向きの補正の結果（画面に出す）。recoveryCount が増えるたびに、新しい */
+    @Volatile var recoveryNote = ""
+        private set
+    @Volatile var recoveryCount = 0
+        private set
+
+    // GLスレッドの内部状態
+    private var textureId = 0
+    private var textureSet = false
+    private var viewWidth = 1
+    private var viewHeight = 1
+    private var viewportChanged = true
+    private var appliedRotation = -1
+    private var lastX = 0.0
+    private var lastZ = 0.0
+    private var lastY = 0.0
+    private var hasLast = false
+    private var walked = 0.0
+    private var lost = false
+    private var lastFx = 0.0
+    private var lastFz = -1.0
+    private var pausedSince = 0L
+    private val pdr = PdrBridge(activity)
+    /** 確認用：ARCoreに伝える画面の向き（0〜3）を、強制する。-1なら、本来の値を使う */
+    @Volatile var rotationOverride = -1
+        set(value) {
+            field = value
+            viewportChanged = true // 次のフレームで、ARCoreに、画面の向きを伝え直す
+        }
+
+    // 背景（カメラ映像）
+    private var program = 0
+    private var posAttr = 0
+    private var texAttr = 0
+    private val quadCoords: FloatBuffer = floatBuffer(floatArrayOf(-1f, -1f, -1f, 1f, 1f, -1f, 1f, 1f))
+    private val quadTexCoords: FloatBuffer = floatBuffer(FloatArray(8))
+
+    // QRの読み取り（別スレッド）
+    private val decoder = Executors.newSingleThreadExecutor()
+    @Volatile private var decoding = false
+    private var lastDecodeAt = 0L
+    private var lastText = ""
+    private var lastTextAt = 0L
+
+    /** アンカーのQRを読んだ瞬間のカメラの位置と向きを、そのアンカーの座標に結びつける。 */
+    fun setReference(pose: PoseSnapshot, anchorX: Double, anchorY: Double, thetaDeg: Double, anchorZ: Double = 0.0) {
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, anchorX, anchorY, thetaDeg, pose.py, anchorZ)
+        fix = null
+        walked = 0.0
+        lost = false
+    }
+
+    /**
+     * 位置が分かっている点（登録済みの備品）のQRを読んだとき、向きは保ったまま、位置だけを合わせ直す。
+     * 追跡が途切れたあとの、立て直しに使う。ARの世界座標そのものが変わっていたら、アンカーを読み直す必要がある。
+     */
+    fun correctPosition(pose: PoseSnapshot, x: Double, y: Double, z: Double? = null) {
+        val old = reference ?: return
+        val bearing = old.bearingOf(pose.fx, pose.fz)
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing, pose.py, z ?: old.toHeight(pose.py))
+        walked = 0.0
+        lost = false
+    }
+
+    /** 直前に位置を合わせた目印（登録済みの備品）：そのときのARの位置と、地図上の位置 */
+    private class Fix(val px: Double, val pz: Double, val x: Double, val y: Double)
+    private var fix: Fix? = null
+
+    /**
+     * 登録済みの備品のQRを読むたびに、位置と向きを合わせ直す。
+     * 位置：その備品の登録位置に合わせる。
+     * 向き：前回の目印から、ARで測った移動の向きと、地図上の向きの差で、回転を直す（目印が2つ以上あるとき）。
+     * @return 画面に出す補足（向きを直したときだけ）
+     */
+    fun fixAtKnownPoint(pose: PoseSnapshot, x: Double, y: Double, z: Double? = null): String? {
+        val old = reference ?: return null
+        var bearing = old.bearingOf(pose.fx, pose.fz)
+        var note: String? = null
+        val prev = fix
+        if (prev != null) {
+            val delta = rotationCorrectionDeg(
+                old.bearingOf(pose.px - prev.px, pose.pz - prev.pz),
+                hypot(pose.px - prev.px, pose.pz - prev.pz),
+                prev.x, prev.y, x, y,
+            )
+            if (delta != null) {
+                bearing = normalizeDeg(bearing + delta)
+                note = "向きを %.0f° 直しました。".format(delta)
+            }
+        }
+        // 高さ：その備品の高さが分かっていれば、それに合わせる（分からなければ、これまでの高さを引き継ぐ）
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing, pose.py, z ?: old.toHeight(pose.py))
+        fix = Fix(pose.px, pose.pz, x, y)
+        walked = 0.0
+        lost = false
+        return note
+    }
+
+    fun hasReference(): Boolean = reference != null
+
+    /** 位置合わせ（アンカーで合わせた基準）を、忘れる。データを全部消すときに使う。 */
+    fun clearReference() {
+        reference = null
+        fix = null
+        walked = 0.0
+        lost = false
+    }
+
+    /** 現在位置を、フロア図上の座標にする（QRを読んだ時点のカメラの位置から）。 */
+    fun mapAt(pose: PoseSnapshot): Pair<Double, Double>? = reference?.toMap(pose.px, pose.pz)
+
+    /** 現在位置の、床からの高さ（m）。アンカーのQRを読んでいなければ null。 */
+    fun heightAt(pose: PoseSnapshot): Double? = reference?.toHeight(pose.py)
+
+    /** @return 準備できたら true */
+    fun resume(): String? {
+        if (session == null) {
+            when (ArCoreApk.getInstance().requestInstall(activity, !installRequested)) {
+                ArCoreApk.InstallStatus.INSTALL_REQUESTED -> {
+                    installRequested = true
+                    return "ARCoreのインストールを求めています。"
+                }
+                ArCoreApk.InstallStatus.INSTALLED -> Unit
+            }
+            try {
+                session = Session(activity).also { s ->
+                    s.configure(Config(s).apply {
+                        updateMode = Config.UpdateMode.LATEST_CAMERA_IMAGE
+                        planeFindingMode = Config.PlaneFindingMode.DISABLED
+                        lightEstimationMode = Config.LightEstimationMode.DISABLED
+                        focusMode = Config.FocusMode.AUTO
+                    })
+                }
+                textureSet = false
+                viewportChanged = true
+            } catch (e: Exception) {
+                return "ARを開始できません：${e.javaClass.simpleName} ${e.message ?: ""}"
+            }
+        }
+        return try {
+            session?.resume()
+            pdr.start()
+            null
+        } catch (e: Exception) {
+            session = null
+            "ARを再開できません：${e.javaClass.simpleName} ${e.message ?: ""}"
+        }
+    }
+
+    fun pause() {
+        session?.pause()
+        pdr.stop()
+    }
+
+    // ---------------- GLSurfaceView.Renderer ----------------
+
+    override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
+        GLES20.glClearColor(0f, 0f, 0f, 1f)
+        val tex = IntArray(1)
+        GLES20.glGenTextures(1, tex, 0)
+        textureId = tex[0]
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        textureSet = false
+
+        val vs = compile(GLES20.GL_VERTEX_SHADER, VERTEX)
+        val fs = compile(GLES20.GL_FRAGMENT_SHADER, FRAGMENT)
+        program = GLES20.glCreateProgram().also {
+            GLES20.glAttachShader(it, vs)
+            GLES20.glAttachShader(it, fs)
+            GLES20.glLinkProgram(it)
+        }
+        posAttr = GLES20.glGetAttribLocation(program, "a_Position")
+        texAttr = GLES20.glGetAttribLocation(program, "a_TexCoord")
+        viewportChanged = true
+    }
+
+    override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
+        GLES20.glViewport(0, 0, width, height)
+        viewWidth = width
+        viewHeight = height
+        viewportChanged = true
+    }
+
+    override fun onDrawFrame(gl: GL10?) {
+        GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT)
+        val s = session ?: return
+        if (!textureSet) {
+            s.setCameraTextureName(textureId)
+            textureSet = true
+        }
+        // 端末の向き（縦・横・逆向き）は、毎フレーム確かめる。横向きから、逆向きの横向きに変わると、画面の大きさは変わらないので、
+        // 画面の大きさの変化だけでは、気づけない
+        @Suppress("DEPRECATION")
+        val rotation = if (rotationOverride >= 0) rotationOverride else activity.windowManager.defaultDisplay.rotation
+        if (rotation != appliedRotation) viewportChanged = true
+        if (viewportChanged) {
+            s.setDisplayGeometry(rotation, viewWidth, viewHeight)
+            appliedRotation = rotation
+            viewportChanged = false
+        }
+        val frame = try {
+            s.update()
+        } catch (e: Exception) {
+            return
+        }
+
+        // 背景（カメラ映像）
+        // 画面の向き・大きさに合わせて、映像の切り出し位置を、毎フレーム計算する（変わったときだけだと、ずれることがあった）
+        quadCoords.position(0)
+        quadTexCoords.position(0)
+        // 画面の四隅（OpenGLの正規化座標）が、カメラ映像のどこに当たるかを、ARCoreに計算してもらう
+        frame.transformCoordinates2d(
+            Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES, quadCoords,
+            Coordinates2d.TEXTURE_NORMALIZED, quadTexCoords,
+        )
+        drawBackground()
+
+        val camera = frame.camera
+        val nowMs = System.currentTimeMillis()
+        if (camera.trackingState != TrackingState.TRACKING) {
+            hasLast = false
+            if (pausedSince == 0L) {
+                pausedSince = nowMs
+                pdr.begin()
+                lossBearing = reference?.bearingOf(lastFx, lastFz) ?: 0.0 // 途切れる前の方角
+                fix = null // 座標系が変わるかもしれないので、前回の目印は使わない
+            }
+            // 歩数とジャイロで橋渡しできる間は、位置を信用する。長く続いたときだけ、信用できないとする
+            val limit = if (pdr.available) BRIDGE_MAX_MS else LOST_MS
+            if (reference != null && nowMs - pausedSince > limit) lost = true
+            val bridgeNote = if (reference != null && pdr.available && !lost)
+                "\n歩数で補っています：${pdr.stepsSoFar()}歩" else ""
+            live = Live(false, "追跡できていません（${reasonText(camera.trackingFailureReason)}）$bridgeNote",
+                null, null, null, walked, lost)
+            return
+        }
+        val pose = camera.pose
+        val px = pose.tx().toDouble()
+        val pz = pose.tz().toDouble()
+        val py = pose.ty().toDouble()
+        val f = pose.rotateVector(floatArrayOf(0f, 0f, -1f))
+        val fh = hypot(f[0].toDouble(), f[2].toDouble())
+        if (fh > 0.2) { // カメラが真上や真下を向いているときは、向きを更新しない
+            lastFx = f[0] / fh
+            lastFz = f[2] / fh
+        }
+        if (pausedSince != 0L && fh <= 0.2 && reference != null) {
+            // 復帰した直後に、カメラが真上や真下を向いている。向きが決まらないので、水平に向けるまで待つ
+            live = Live(false, "追跡が戻りました。向きを確かめるため、カメラを水平に向けてください。", null, null, null, walked, lost)
+            return
+        }
+        if (pausedSince != 0L) {
+            // 復帰。途切れていた間に歩いたぶんを、歩数とジャイロの見積もりで、位置に足す
+            val lostSec = (nowMs - pausedSince) / 1000.0
+            val (bdx, bdz, steps) = pdr.end()
+            val ref0 = reference
+            if (ref0 != null) {
+                // ARCoreは、追跡が途切れると、座標系ごとリセットすることがある。そのときは、ARの向きの基準も変わるので、
+                // 元の対応づけに、いまのARの向きを当てはめると、方角がずれる。ジャイロの向きとの食い違いで、見分ける。
+                val gyroNow = pdr.heading()
+                val gyroThen = pdr.headingAtBegin
+                val gyroOk = pdr.available && fh > 0.2 && !gyroNow.isNaN() && !gyroThen.isNaN() && !pdr.offset().isNaN()
+                val mismatch = if (gyroOk) yawMismatchDeg(arYawDeg(lastFx, lastFz), gyroNow, pdr.offset()) else null
+                val frameChanged = mismatch != null && abs(mismatch) > FRAME_RESET_DEG
+                if (!lost && (steps > 0 || frameChanged)) {
+                    // 追跡が戻ったARの位置は、途切れた地点のあたりから再開する。そこに、進んだぶんを足した地点が、本当の位置
+                    val (tx, ty) = ref0.toMap(lastX + bdx, lastZ + bdz)
+                    // 座標系が変わっていたら、途切れる前の方角に、ジャイロが回った量を足す（ARの座標系には頼らない）
+                    val bearing = if (frameChanged) bearingAfterLoss(lossBearing, gyroThen, gyroNow)
+                    else ref0.bearingOf(lastFx, lastFz)
+                    reference = ArReference(px, pz, lastFx, lastFz, tx, ty, bearing, py, ref0.toHeight(lastY))
+                    walked += PdrBridge.distanceOf(bdx, bdz) * 0.15 + lostSec * 0.3
+                } else {
+                    walked += lostSec * LOSS_PENALTY_M_PER_S
+                }
+                if (mismatch != null && lostSec > 1.0) {
+                    recoveryNote = if (frameChanged)
+                        "追跡が戻りました。ARの座標が変わっていたので、ジャイロで向きを直しました（食い違い %.0f°）。".format(abs(mismatch))
+                    else "追跡が戻りました。ARの座標は保たれていました（食い違い %.0f°）。".format(abs(mismatch))
+                    recoveryCount++
+                }
+            }
+            pausedSince = 0L
+        }
+        if (fh > 0.2) pdr.calibrate(arYawDeg(lastFx, lastFz))
+
+        if (hasLast) {
+            val step = hypot(px - lastX, pz - lastZ)
+            if (step < 1.0) walked += step // 追跡が飛んだときの、ありえない距離は足さない
+        }
+        lastX = px; lastZ = pz; lastY = py; hasLast = true
+
+        val ref = reference
+        live = if (ref == null) {
+            Live(true, "追跡できています。アンカーのQRを読み取ってください。", null, null, null, 0.0, false)
+        } else {
+            val (mx, my) = ref.toMap(px, pz)
+            Live(true, "", mx, my, ref.bearingOf(lastFx, lastFz), walked, lost, countPoints(frame), ref.toHeight(py))
+        }
+
+        maybeDecode(frame, PoseSnapshot(px, pz, lastFx, lastFz, py))
+    }
+
+    private fun countPoints(frame: com.google.ar.core.Frame): Int = try {
+        frame.acquirePointCloud().use { it.points.remaining() / 4 }
+    } catch (e: Exception) {
+        -1
+    }
+
+    // ---------------- QR ----------------
+
+    private fun maybeDecode(frame: com.google.ar.core.Frame, pose: PoseSnapshot) {
+        val now = System.currentTimeMillis()
+        if (decoding || now - lastDecodeAt < 200) return
+        val image = try {
+            frame.acquireCameraImage()
+        } catch (e: NotYetAvailableException) {
+            return
+        } catch (e: Exception) {
+            return
+        }
+        lastDecodeAt = now
+        val w = image.width
+        val h = image.height
+        val data = ByteArray(w * h)
+        try {
+            val plane = image.planes[0] // Y（明るさ）だけで足りる
+            val buf = plane.buffer
+            val rowStride = plane.rowStride
+            for (row in 0 until h) {
+                buf.position(row * rowStride)
+                buf.get(data, row * w, w)
+            }
+        } finally {
+            image.close()
+        }
+        decoding = true
+        decoder.execute {
+            try {
+                val source = PlanarYUVLuminanceSource(data, w, h, 0, 0, w, h, false)
+                val bitmap = BinaryBitmap(HybridBinarizer(source))
+                val hints = mapOf(
+                    DecodeHintType.TRY_HARDER to true,
+                    DecodeHintType.POSSIBLE_FORMATS to listOf(BarcodeFormat.QR_CODE),
+                )
+                val text = QRCodeReader().decode(bitmap, hints).text
+                val t = System.currentTimeMillis()
+                // 同じQRが映り続けても、4秒は続けて渡さない
+                if (text != lastText || t - lastTextAt > 4000) {
+                    lastText = text
+                    lastTextAt = t
+                    onQr(text, pose)
+                }
+            } catch (e: Exception) {
+                // QRが映っていないフレームは、読み取れなくて当然
+            } finally {
+                decoding = false
+            }
+        }
+    }
+
+    // ---------------- 背景の描画 ----------------
+
+    private fun drawBackground() {
+        GLES20.glDisable(GLES20.GL_DEPTH_TEST)
+        GLES20.glDepthMask(false)
+        GLES20.glUseProgram(program)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        quadCoords.position(0)
+        quadTexCoords.position(0)
+        GLES20.glVertexAttribPointer(posAttr, 2, GLES20.GL_FLOAT, false, 0, quadCoords)
+        GLES20.glVertexAttribPointer(texAttr, 2, GLES20.GL_FLOAT, false, 0, quadTexCoords)
+        GLES20.glEnableVertexAttribArray(posAttr)
+        GLES20.glEnableVertexAttribArray(texAttr)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(posAttr)
+        GLES20.glDisableVertexAttribArray(texAttr)
+        GLES20.glDepthMask(true)
+        GLES20.glEnable(GLES20.GL_DEPTH_TEST)
+    }
+
+    private fun compile(type: Int, src: String): Int {
+        val id = GLES20.glCreateShader(type)
+        GLES20.glShaderSource(id, src)
+        GLES20.glCompileShader(id)
+        return id
+    }
+
+    private fun reasonText(r: com.google.ar.core.TrackingFailureReason): String = when (r) {
+        com.google.ar.core.TrackingFailureReason.INSUFFICIENT_FEATURES ->
+            "模様の少ない面（白い壁や床）を映しています。模様のある場所に向けてください"
+        com.google.ar.core.TrackingFailureReason.EXCESSIVE_MOTION ->
+            "動きが速すぎます。ゆっくり歩いて、ゆっくり向きを変えてください"
+        com.google.ar.core.TrackingFailureReason.INSUFFICIENT_LIGHT ->
+            "暗すぎます。明るい場所で使ってください"
+        com.google.ar.core.TrackingFailureReason.CAMERA_UNAVAILABLE ->
+            "カメラを、ほかのアプリが使っています"
+        else -> "追跡が不安定です。カメラを、周りの景色に向けて、ゆっくり動かしてください"
+    }
+
+    companion object {
+        /** これより長く追跡が途切れたら、位置を信用できないとして、アンカーの読み直しを求める（ミリ秒） */
+        private const val LOST_MS = 3000L
+        /** 歩数とジャイロで橋渡しできる、途切れの長さの上限（ミリ秒）。これを超えたら、アンカーの読み直しを求める */
+        private const val BRIDGE_MAX_MS = 15000L
+        /** 追跡が途切れていた1秒あたり、誤差の見積もりに足す距離（m） */
+        private const val LOSS_PENALTY_M_PER_S = 1.0
+        private const val VERTEX = """
+            attribute vec4 a_Position;
+            attribute vec2 a_TexCoord;
+            varying vec2 v_TexCoord;
+            void main() {
+                gl_Position = a_Position;
+                v_TexCoord = a_TexCoord;
+            }
+        """
+        private const val FRAGMENT = """
+            #extension GL_OES_EGL_image_external : require
+            precision mediump float;
+            varying vec2 v_TexCoord;
+            uniform samplerExternalOES sTexture;
+            void main() {
+                gl_FragColor = texture2D(sTexture, v_TexCoord);
+            }
+        """
+
+        private fun floatBuffer(values: FloatArray): FloatBuffer =
+            ByteBuffer.allocateDirect(values.size * 4).order(ByteOrder.nativeOrder()).asFloatBuffer().apply {
+                put(values)
+                position(0)
+            }
+    }
+}

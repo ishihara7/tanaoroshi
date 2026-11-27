@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- デバッグビルドだけ、HTTP（暗号化なし）の通信を許す。PCのローカルサーバーにつないで確認するため。リリースビルドは、HTTPSのみ。 -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application android:usesCleartextTraffic="true" />
+</manifest>

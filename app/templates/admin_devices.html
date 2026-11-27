@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}端末の登録{% endblock %}
+{% block content %}
+<h1>棚卸アプリの端末</h1>
+<p class="note">アプリに、サーバーのアドレスとログイン情報を入力する代わりに、ここで出すQRを、アプリで読み取ります。QRには、パスワードは入りません（{{ minutes }}分間・1回だけ使える設定コードです）。</p>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+<form method="post" action="/admin/devices/enroll">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label for="user_id">ユーザー（この端末が、誰として動くか）</label>
+  <select id="user_id" name="user_id" required>
+    {% for u in users %}<option value="{{ u.id }}">{{ u.login_id }}{% if u.role == 'admin' %}（管理者）{% endif %}</option>{% endfor %}
+  </select>
+  <label for="label">端末の名前（見分けるため。任意）</label>
+  <input id="label" name="label" maxlength="100" placeholder="例：1階のタブレット">
+  <p><button type="submit">QRを表示</button></p>
+</form>
+
+<h2>登録済みの端末</h2>
+<table>
+  <tr><th>端末</th><th>ユーザー</th><th>最後の通信</th><th></th></tr>
+  {% for d in devices %}
+  <tr>
+    <td>{{ d.label or '（名前なし）' }}<br><span class="note">{{ d.created_at|jst }} に登録</span></td>
+    <td>{{ names.get(d.user_id, '') }}</td>
+    <td>{% if d.revoked_at %}無効（{{ d.revoked_at|jst }}）{% else %}{{ d.last_used_at|jst if d.last_used_at else '—' }}{% endif %}</td>
+    <td>{% if not d.revoked_at %}
+      <form class="inline" method="post" action="/admin/devices/{{ d.id }}/revoke" onsubmit="return confirm('この端末を無効にします。アプリは、使えなくなります。よろしいですか？')">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+        <button class="sub" type="submit">無効にする</button>
+      </form>{% endif %}</td>
+  </tr>
+  {% else %}
+  <tr><td colspan="4" class="note">登録された端末は、まだありません。</td></tr>
+  {% endfor %}
+</table>
+{% endblock %}
