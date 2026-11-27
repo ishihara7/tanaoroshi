@@ -193,4 +193,24 @@ class InventoryTest {
         assertEquals(1, before.items.size)
         assertFalse(before.items.single().placed.missedLast)
     }
+
+    @Test
+    fun 場所違いで確かめた備品は_読んだ高さに更新し_そうでなければ予定の高さのまま() {
+        val a = Placed("A", 1.0, 1.0, 0.5, 1, z = 0.4)
+        val b = Placed("B", 2.0, 2.0, 0.5, 1, z = 1.2)
+        val s = state(
+            listOf(item("a", a), item("b", b)), confirmed = setOf("a", "b"),
+            moved = mapOf("a" to MovedAt("a", 2, 5.0, 6.0, 1.5)),
+        )
+        val (r, _) = Inventory.finish(s, 0.5)
+        assertEquals(1.5, r.items.first { it.token == "a" }.placed.z!!, 1e-9)
+        assertEquals(1.2, r.items.first { it.token == "b" }.placed.z!!, 1e-9)
+    }
+
+    @Test
+    fun 想定外の備品は_読んだ高さを持つ() {
+        val s = state(emptyList(), unexpected = mapOf("u" to Unexpected("u", "未登録", 1, 3.0, 4.0, 0.9)))
+        val (r, _) = Inventory.finish(s, 0.5)
+        assertEquals(0.9, r.items.single().placed.z!!, 1e-9)
+    }
 }

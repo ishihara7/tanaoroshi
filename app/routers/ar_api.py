@@ -33,7 +33,7 @@ def _asset_by_token(session: Session, token: str) -> Asset | None:
 
 def item_json(i: ArItem | svc.Item) -> dict:
     return {
-        "token": i.token, "asset_no": i.asset_no, "name": i.name, "floor": i.floor, "x": i.x, "y": i.y, "err_m": i.err_m,
+        "token": i.token, "asset_no": i.asset_no, "name": i.name, "floor": i.floor, "x": i.x, "y": i.y, "z": i.z, "err_m": i.err_m,
         "located": i.located, "missed_last": i.missed_last, "was_unexpected": i.was_unexpected,
     }
 
@@ -46,7 +46,7 @@ def get_plan(request: Request, user: User = Depends(auth.api_user), session: Ses
         "csrf": auth.get_csrf_token(request),
         "server_time": datetime.now(timezone.utc).isoformat(),
         "anchors": [
-            {"token": a.anchor_token, "name": a.name, "floor": a.floor, "x_m": a.x_m, "y_m": a.y_m, "facing_deg": a.facing_deg}
+            {"token": a.anchor_token, "name": a.name, "floor": a.floor, "x_m": a.x_m, "y_m": a.y_m, "z_m": a.z_m, "facing_deg": a.facing_deg}
             for a in session.scalars(select(Anchor).where(Anchor.is_active == True).order_by(Anchor.floor, Anchor.name))  # noqa: E712
         ],
         "items": [item_json(i) for i in svc.load_items(session)],
@@ -63,6 +63,7 @@ class ItemIn(BaseModel):
     floor: int = Field(default=1, ge=-9, le=99)
     x: float
     y: float
+    z: float | None = Field(default=None, ge=-10, le=100)  # 床からの高さ（m）。分からなければ空
     err_m: float = Field(default=0.0, ge=0)
 
 
@@ -82,7 +83,7 @@ def put_item(token: str, body: ItemIn, user: User = Depends(auth.api_user), _csr
         item = ArItem(token=token)
         session.add(item)
     item.asset_no = asset.asset_no
-    item.name, item.floor, item.x, item.y, item.err_m, item.located = name, body.floor, body.x, body.y, body.err_m, True
+    item.name, item.floor, item.x, item.y, item.z, item.err_m, item.located = name, body.floor, body.x, body.y, body.z, body.err_m, True
     item.missed_last = item.was_unexpected = False
     session.commit()
     return item_json(item)
@@ -106,6 +107,7 @@ class RecordIn(BaseModel):
     floor: int | None = Field(default=None, ge=-9, le=99)
     x: float | None = None
     y: float | None = None
+    z: float | None = Field(default=None, ge=-10, le=100)  # 床からの高さ（m）
     moved: bool = False
     employee_no: str = Field(default="", max_length=20)
     read_at: datetime
@@ -157,7 +159,7 @@ def post_records(body: RecordsIn, user: User = Depends(auth.api_user), _csrf: No
             inv = svc.open_or_start(session)
         session.add(InventoryRecord(
             client_id=r.client_id, inventory_id=inv.id, kind=r.kind, token=token, method=r.method,
-            floor=r.floor, x=r.x, y=r.y, moved=r.moved, user_id=user.id, employee_no=emp or None,
+            floor=r.floor, x=r.x, y=r.y, z=r.z, moved=r.moved, user_id=user.id, employee_no=emp or None,
             read_at=_to_utc_naive(r.read_at),
         ))
         seen.add(r.client_id)

@@ -11,7 +11,7 @@ from app.services.inventory_logic import Derived, Item, Read, derive, finish
 
 def load_items(session: Session) -> list[Item]:
     return [
-        Item(a.token, a.name, a.floor, a.x, a.y, a.err_m, a.located, a.missed_last, a.was_unexpected, a.asset_no)
+        Item(a.token, a.name, a.floor, a.x, a.y, a.err_m, a.located, a.missed_last, a.was_unexpected, a.asset_no, a.z)
         for a in session.scalars(select(ArItem).order_by(ArItem.updated_at, ArItem.token))
     ]
 
@@ -20,7 +20,7 @@ def replace_items(session: Session, items: list[Item]) -> None:
     session.execute(delete(ArItem))
     for i in items:
         session.add(ArItem(
-            token=i.token, asset_no=i.asset_no, name=i.name, floor=i.floor, x=i.x, y=i.y, err_m=i.err_m,
+            token=i.token, asset_no=i.asset_no, name=i.name, floor=i.floor, x=i.x, y=i.y, z=i.z, err_m=i.err_m,
             located=i.located, missed_last=i.missed_last, was_unexpected=i.was_unexpected,
         ))
 
@@ -48,7 +48,7 @@ def open_or_start(session: Session) -> Inventory:
 
 def reads_of(session: Session, inventory_id: int) -> list[Read]:
     return [
-        Read(r.id, r.token, r.kind, r.read_at, r.floor, r.x, r.y, r.moved, r.method, r.employee_no)
+        Read(r.id, r.token, r.kind, r.read_at, r.floor, r.x, r.y, r.moved, r.method, r.employee_no, r.z)
         for r in session.scalars(select(InventoryRecord).where(InventoryRecord.inventory_id == inventory_id))
     ]
 

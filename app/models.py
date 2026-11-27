@@ -77,6 +77,7 @@ class Anchor(Base):
     floor: Mapped[int] = mapped_column(Integer)  # 階（地下は負の数）
     x_m: Mapped[float] = mapped_column(Float)
     y_m: Mapped[float] = mapped_column(Float)
+    z_m: Mapped[float] = mapped_column(Float, default=0.0, server_default="0")  # QRを貼った高さ（床から、m）。高さの基準
     # QRを読むとき、利用者が向く方向（壁に正対する向き）。北を0°とした時計回り。コンパスの向きの較正に使う。未設定ならNULL
     facing_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -97,6 +98,7 @@ class ArItem(Base):
     floor: Mapped[int] = mapped_column(Integer, default=1)
     x: Mapped[float] = mapped_column(Float, default=0.0)
     y: Mapped[float] = mapped_column(Float, default=0.0)
+    z: Mapped[float | None] = mapped_column(Float, nullable=True)  # 床からの高さ（m）。分からなければ空
     err_m: Mapped[float] = mapped_column(Float, default=0.0)
     located: Mapped[bool] = mapped_column(Boolean, default=True)  # 位置が分かっているか（想定外を位置なしで読んだら False）
     missed_last: Mapped[bool] = mapped_column(Boolean, default=False)  # 前回の棚卸で、確かめられなかった
@@ -132,6 +134,7 @@ class InventoryRecord(Base):
     floor: Mapped[int | None] = mapped_column(Integer, nullable=True)
     x: Mapped[float | None] = mapped_column(Float, nullable=True)
     y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    z: Mapped[float | None] = mapped_column(Float, nullable=True)  # 床からの高さ（m）
     moved: Mapped[bool] = mapped_column(Boolean, default=False)  # 端末の判定：予定と違う場所で読んだ
     user_id: Mapped[int] = mapped_column(Integer)
     employee_no: Mapped[str | None] = mapped_column(String(20), nullable=True)

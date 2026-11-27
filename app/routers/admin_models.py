@@ -101,12 +101,13 @@ def _result_items(session: Session, inv: Inventory, floor: int) -> list[dict]:
             if not it.located:
                 continue
             x, y, fl, err, status = it.x, it.y, it.floor, it.err_m, "missed"
+            z = it.z
         else:
-            x, y, fl, err = r["x"], r["y"], r["floor"], 0.0
+            x, y, fl, err, z = r["x"], r["y"], r["floor"], 0.0, r["z"]
             status = "unexpected" if r["kind"] == "想定外" else "moved" if r["moved"] else "ok"
         if fl != floor or x is None or y is None:
             continue
-        out.append({"token": r["token"], "asset_no": r["asset_no"], "name": r["name"], "x": x, "y": y, "err_m": err, "status": status})
+        out.append({"token": r["token"], "asset_no": r["asset_no"], "name": r["name"], "x": x, "y": y, "z": z, "err_m": err, "status": status})
     return out
 
 
@@ -116,7 +117,7 @@ def model_view(floor: int, request: Request, inv: int | None = None, user: User 
     m = session.get(FloorModel, floor)
     if m is None or not _model_path(m).exists():
         return RedirectResponse("/admin/models", status_code=303)
-    anchors = [{"token": a.anchor_token, "name": a.name, "x": a.x_m, "y": a.y_m}
+    anchors = [{"token": a.anchor_token, "name": a.name, "x": a.x_m, "y": a.y_m, "z": a.z_m}
                for a in session.scalars(select(Anchor).where(Anchor.floor == floor, Anchor.is_active == True)  # noqa: E712
                                         .order_by(Anchor.name))]
     inventory = session.get(Inventory, inv) if inv is not None else None
@@ -127,7 +128,7 @@ def model_view(floor: int, request: Request, inv: int | None = None, user: User 
         for i in session.scalars(select(ArItem).where(ArItem.floor == floor, ArItem.located == True)  # noqa: E712
                                  .order_by(ArItem.name)):
             status = "unexpected" if i.was_unexpected else "missed" if i.missed_last else "ok"
-            items.append({"token": i.token, "asset_no": i.asset_no or "", "name": i.name, "x": i.x, "y": i.y,
+            items.append({"token": i.token, "asset_no": i.asset_no or "", "name": i.name, "x": i.x, "y": i.y, "z": i.z,
                           "err_m": i.err_m, "status": status})
     state = {
         "floor": floor,

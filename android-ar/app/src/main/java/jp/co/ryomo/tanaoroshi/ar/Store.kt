@@ -14,6 +14,8 @@ data class Placed(
     val wasUnexpected: Boolean = false,
     /** 台帳の管理番号（手入力で確かめるときに使う）。台帳にない備品は null */
     val assetNo: String? = null,
+    /** 床からの高さ（m）。分からなければ null（アンカーの高さを、基準にして測る） */
+    val z: Double? = null,
 )
 
 /** ARのゴースト（カメラ映像の上の札）に出す文字。NAME：名称／ASSET_NO：管理番号。 */
@@ -26,16 +28,16 @@ fun Placed.shortLabel(mode: LabelMode): String = if (mode == LabelMode.ASSET_NO)
 fun Placed.label(): String = assetNo?.let { "$it　$name" } ?: name
 
 /** 棚卸で、予定にないのに読んだ備品。位置が取れなければ x・y は null。 */
-data class Unexpected(val token: String, val name: String, val floor: Int, val x: Double?, val y: Double?)
+data class Unexpected(val token: String, val name: String, val floor: Int, val x: Double?, val y: Double?, val z: Double? = null)
 
 /** 棚卸で、予定と違う場所（階・位置）で読んだ備品。位置が取れなければ x・y は null。 */
-data class MovedAt(val token: String, val floor: Int, val x: Double?, val y: Double?)
+data class MovedAt(val token: String, val floor: Int, val x: Double?, val y: Double?, val z: Double? = null)
 
 /** 階の表示。アンカーの記号つき（1階＝A、2階＝B、3階＝C）。 */
 fun floorLabel(floor: Int): String = "${floor}階（${"ABC".getOrElse(floor - 1) { '?' }}）"
 
 /** アンカーの定義。floor：そのアンカーがある階。facingDeg：QRを読むとき向く方向（北を0°とした時計回り）。 */
-data class AnchorDef(val token: String, val name: String, val floor: Int, val x: Double, val y: Double, val facingDeg: Double)
+data class AnchorDef(val token: String, val name: String, val floor: Int, val x: Double, val y: Double, val facingDeg: Double, val z: Double = 0.0)
 
 /** 設定。アンカーA・B・Cは、それぞれ1階・2階・3階の原点。壁の向きを、階ごとに持つ。 */
 data class Settings(
@@ -153,6 +155,7 @@ class Store(context: Context) : SyncStorage {
             ServerAnchor(
                 o.getString("token"), o.getString("name"), o.getInt("floor"), o.getDouble("x"), o.getDouble("y"),
                 if (o.isNull("facing")) null else o.getDouble("facing"),
+                o.optDouble("z", 0.0),
             )
         }
     } catch (e: Exception) {
@@ -162,7 +165,7 @@ class Store(context: Context) : SyncStorage {
     fun saveAnchors(list: List<ServerAnchor>) {
         val a = org.json.JSONArray()
         list.forEach {
-            a.put(JSONObject().put("token", it.token).put("name", it.name).put("floor", it.floor).put("x", it.xM).put("y", it.yM).putOpt("facing", it.facingDeg))
+            a.put(JSONObject().put("token", it.token).put("name", it.name).put("floor", it.floor).put("x", it.xM).put("y", it.yM).putOpt("facing", it.facingDeg).put("z", it.zM))
         }
         prefs.edit().putString("anchors", a.toString()).apply()
     }
@@ -189,6 +192,7 @@ class Store(context: Context) : SyncStorage {
                     o.getString("name"), o.getDouble("x"), o.getDouble("y"), o.getDouble("errM"), o.optInt("floor", 1),
                     o.optBoolean("located", true), o.optBoolean("missedLast", false), o.optBoolean("wasUnexpected", false),
                     if (o.has("assetNo") && !o.isNull("assetNo")) o.getString("assetNo") else null,
+                    o.optDoubleOrNull("z"),
                 )
             }
         } catch (e: Exception) {
@@ -202,7 +206,7 @@ class Store(context: Context) : SyncStorage {
         for ((k, p) in reg) {
             json.put(k, JSONObject().put("name", p.name).put("x", p.x).put("y", p.y).put("errM", p.errM).put("floor", p.floor)
                 .put("located", p.located).put("missedLast", p.missedLast).put("wasUnexpected", p.wasUnexpected)
-                .putOpt("assetNo", p.assetNo))
+                .putOpt("assetNo", p.assetNo).putOpt("z", p.z))
         }
         prefs.edit().putString("registry", json.toString()).apply()
     }
@@ -214,7 +218,7 @@ class Store(context: Context) : SyncStorage {
             val json = JSONObject(prefs.getString("unexpected", "{}") ?: "{}")
             for (k in json.keys()) {
                 val o = json.getJSONObject(k)
-                out[k] = Unexpected(k, o.getString("name"), o.getInt("floor"), o.optDoubleOrNull("x"), o.optDoubleOrNull("y"))
+                out[k] = Unexpected(k, o.getString("name"), o.getInt("floor"), o.optDoubleOrNull("x"), o.optDoubleOrNull("y"), o.optDoubleOrNull("z"))
             }
         } catch (e: Exception) {
         }
@@ -224,7 +228,7 @@ class Store(context: Context) : SyncStorage {
     fun saveUnexpected(m: Map<String, Unexpected>) {
         val json = JSONObject()
         for ((k, u) in m) {
-            json.put(k, JSONObject().put("name", u.name).put("floor", u.floor).putOpt("x", u.x).putOpt("y", u.y))
+            json.put(k, JSONObject().put("name", u.name).put("floor", u.floor).putOpt("x", u.x).putOpt("y", u.y).putOpt("z", u.z))
         }
         prefs.edit().putString("unexpected", json.toString()).apply()
     }
@@ -235,7 +239,7 @@ class Store(context: Context) : SyncStorage {
             val json = JSONObject(prefs.getString("moved", "{}") ?: "{}")
             for (k in json.keys()) {
                 val o = json.getJSONObject(k)
-                out[k] = MovedAt(k, o.getInt("floor"), o.optDoubleOrNull("x"), o.optDoubleOrNull("y"))
+                out[k] = MovedAt(k, o.getInt("floor"), o.optDoubleOrNull("x"), o.optDoubleOrNull("y"), o.optDoubleOrNull("z"))
             }
         } catch (e: Exception) {
         }
@@ -244,7 +248,7 @@ class Store(context: Context) : SyncStorage {
 
     fun saveMoved(m: Map<String, MovedAt>) {
         val json = JSONObject()
-        for ((k, v) in m) json.put(k, JSONObject().put("floor", v.floor).putOpt("x", v.x).putOpt("y", v.y))
+        for ((k, v) in m) json.put(k, JSONObject().put("floor", v.floor).putOpt("x", v.x).putOpt("y", v.y).putOpt("z", v.z))
         prefs.edit().putString("moved", json.toString()).apply()
     }
 

@@ -335,7 +335,7 @@ class AppModel(
         val i = items.indexOfFirst { it.token == token }
         if (i >= 0) items[i] = PlacedItem(token, p) else items.add(PlacedItem(token, p))
         persist()
-        enqueue(PutItemOp(newId(), token, p.name, p.floor, p.x, p.y, p.errM))
+        enqueue(PutItemOp(newId(), token, p.name, p.floor, p.x, p.y, p.errM, p.z))
     }
 
     // ---------------- サーバーとの同期 ----------------
@@ -349,8 +349,8 @@ class AppModel(
         sync.kick()
     }
 
-    private fun readRecord(token: String, method: String, floor: Int?, pos: Pair<Double, Double>?, moved: Boolean) = RecordOp(
-        newId(), "read", token, method, floor, pos?.first, pos?.second, moved, settings.employeeNo, System.currentTimeMillis(),
+    private fun readRecord(token: String, method: String, floor: Int?, pos: Pair<Double, Double>?, moved: Boolean, z: Double? = null) = RecordOp(
+        newId(), "read", token, method, floor, pos?.first, pos?.second, moved, settings.employeeNo, System.currentTimeMillis(), z,
     )
 
     private fun unconfirmRecord(token: String) = RecordOp(
@@ -379,7 +379,7 @@ class AppModel(
     /** アンカーの定義。サーバーから取得したものがあれば、それを使う。なければ（初めて使うとき）、設定のA・B・C */
     private fun anchorFor(token: String): AnchorDef? =
         if (serverAnchors.isNotEmpty()) {
-            serverAnchors.find { it.token == token }?.let { AnchorDef(it.token, it.name, it.floor, it.xM, it.yM, it.facingDeg ?: 0.0) }
+            serverAnchors.find { it.token == token }?.let { AnchorDef(it.token, it.name, it.floor, it.xM, it.yM, it.facingDeg ?: 0.0, it.zM) }
         } else {
             settings.anchors().find { it.token == token }
         }
@@ -445,7 +445,7 @@ class AppModel(
                 notes += "ARの推定と、アンカーの位置の差：%.2f m（%.0f m歩行）".format(gap, l.walkedM)
             }
             val moved = floor != null && floor != a.floor
-            engine.setReference(pose, a.x, a.y, a.facingDeg)
+            engine.setReference(pose, a.x, a.y, a.facingDeg, a.z)
             floor = a.floor
             targetToken = null
             if (routeMode) startRoute()
@@ -470,12 +470,13 @@ class AppModel(
             }
             if (!engine.hasReference()) return say("先に、アンカーのQRを読み取ってください。", false)
             val pos = engine.mapAt(pose) ?: return
+            val posZ = engine.heightAt(pose)
             val err = ErrorModel.estimate(l.walkedM)
             if (l.lostTracking) {
                 // 追跡が途切れたあとは、位置を信用できない。登録済みの備品なら、それを目印に立て直す
                 val known = items.firstOrNull { it.token == ref.token }?.placed
                 return if (known != null) {
-                    engine.fixAtKnownPoint(pose, known.x, known.y)
+                    engine.fixAtKnownPoint(pose, known.x, known.y, known.z)
                     haptic()
                     say("「$name」（登録済み）を目印に、位置を合わせ直しました。続けて、次の備品へ進めます。")
                 } else {
@@ -483,7 +484,7 @@ class AppModel(
                 }
             }
             val f = floor ?: 1
-            register(ref.token, Placed(asset?.name ?: name, pos.first, pos.second, err, f, assetNo = asset?.assetNo))
+            register(ref.token, Placed(asset?.name ?: name, pos.first, pos.second, err, f, assetNo = asset?.assetNo, z = posZ))
             haptic()
             say("「$name」を${f}階に登録しました（誤差 ±%.1f m）。".format(err))
             return
@@ -515,13 +516,18 @@ class AppModel(
             pose != null -> engine.mapAt(pose)
             else -> l.mapX?.let { x -> l.mapY?.let { y -> x to y } } // 手入力：いまの追跡位置
         }
+        val zNow: Double? = when {
+            !engine.hasReference() || l.lostTracking -> null
+            pose != null -> engine.heightAt(pose)
+            else -> l.mapZ // 手入力：いまの追跡位置
+        }
         val placed = items.firstOrNull { it.token == token }?.placed
         if (placed == null) {
             // 予定にない備品。登録はせず、「想定外」として記録する（位置が取れなければ階だけ）
             val first = token !in unexpected
             val inLedger = ledger[token]
-            updateUnexpected(unexpected + (token to Unexpected(token, inLedger?.name ?: name, floor ?: 1, posNow?.first, posNow?.second)))
-            enqueue(readRecord(token, method, floor, posNow, false))
+            updateUnexpected(unexpected + (token to Unexpected(token, inLedger?.name ?: name, floor ?: 1, posNow?.first, posNow?.second, zNow)))
+            enqueue(readRecord(token, method, floor, posNow, false, zNow))
             haptic()
             val why = when {
                 inLedger != null -> "台帳にありますが、位置が登録されていません。"
@@ -537,7 +543,7 @@ class AppModel(
         val gap = j.gapM
         val isMoved = j.isMoved
         updateMoved(
-            if (isMoved) moved + (token to MovedAt(token, floor ?: placed.floor, posNow?.first, posNow?.second))
+            if (isMoved) moved + (token to MovedAt(token, floor ?: placed.floor, posNow?.first, posNow?.second, zNow))
             else moved - token,
         )
         val gapText = if (gap != null) "　登録位置との差：%.2f m".format(gap) else ""
@@ -547,8 +553,8 @@ class AppModel(
             else -> "\n登録位置から %.1f m 以上離れています。場所違いとして記録しました。".format(settings.movedThresholdM)
         }
         // 備品を読むたびに、その場所を目印に、位置と向きを合わせ直す（前の目印から2m以上歩いていれば、向きも直る）。場所違いは、目印にしない
-        val fixNote = if (pose != null && engine.hasReference() && !otherFloor && !isMoved) engine.fixAtKnownPoint(pose, placed.x, placed.y) else null
-        enqueue(readRecord(token, method, floor ?: placed.floor, posNow, isMoved))
+        val fixNote = if (pose != null && engine.hasReference() && !otherFloor && !isMoved) engine.fixAtKnownPoint(pose, placed.x, placed.y, placed.z) else null
+        enqueue(readRecord(token, method, floor ?: placed.floor, posNow, isMoved, zNow))
         haptic()
         val wasRoute = routeMode
         confirm(token, placed.x, placed.y)

@@ -13,6 +13,8 @@ sealed interface Op {
 /** 備品登録モード：備品の階と位置を、予定として登録する。 */
 data class PutItemOp(
     override val id: String, val token: String, val name: String, val floor: Int, val x: Double, val y: Double, val errM: Double,
+    /** 床からの高さ（m）。分からなければ null */
+    val z: Double? = null,
 ) : Op
 
 data class DeleteItemOp(override val id: String, val token: String) : Op
@@ -24,6 +26,8 @@ data class DeleteItemOp(override val id: String, val token: String) : Op
 data class RecordOp(
     override val id: String, val kind: String, val token: String, val method: String,
     val floor: Int?, val x: Double?, val y: Double?, val moved: Boolean, val employeeNo: String, val readAtMs: Long,
+    /** 読んだ高さ（床から、m）。分からなければ null */
+    val z: Double? = null,
 ) : Op
 
 /** 棚卸を終える（サーバーで確定する）。 */
@@ -54,10 +58,10 @@ object Outbox {
 
 fun Op.toJson(): JSONObject = when (this) {
     is PutItemOp -> JSONObject().put("t", "put").put("id", id).put("token", token).put("name", name).put("floor", floor)
-        .put("x", x).put("y", y).put("errM", errM)
+        .put("x", x).put("y", y).put("errM", errM).putOpt("z", z)
     is DeleteItemOp -> JSONObject().put("t", "del").put("id", id).put("token", token)
     is RecordOp -> JSONObject().put("t", "rec").put("id", id).put("kind", kind).put("token", token).put("method", method)
-        .putOpt("floor", floor).putOpt("x", x).putOpt("y", y).put("moved", moved).put("emp", employeeNo).put("at", readAtMs)
+        .putOpt("floor", floor).putOpt("x", x).putOpt("y", y).put("moved", moved).put("emp", employeeNo).put("at", readAtMs).putOpt("z", z)
     is FinishOp -> JSONObject().put("t", "fin").put("id", id)
     is UndoOp -> JSONObject().put("t", "undo").put("id", id).put("inv", inventoryId)
 }
@@ -67,12 +71,12 @@ fun opFromJson(o: JSONObject): Op? {
     if (id.isEmpty()) return null
     fun dbl(k: String): Double? = if (o.has(k) && !o.isNull(k)) o.getDouble(k) else null
     return when (o.optString("t")) {
-        "put" -> PutItemOp(id, o.getString("token"), o.optString("name"), o.getInt("floor"), o.getDouble("x"), o.getDouble("y"), o.optDouble("errM", 0.0))
+        "put" -> PutItemOp(id, o.getString("token"), o.optString("name"), o.getInt("floor"), o.getDouble("x"), o.getDouble("y"), o.optDouble("errM", 0.0), dbl("z"))
         "del" -> DeleteItemOp(id, o.getString("token"))
         "rec" -> RecordOp(
             id, o.getString("kind"), o.getString("token"), o.optString("method", "qr"),
             if (o.has("floor") && !o.isNull("floor")) o.getInt("floor") else null, dbl("x"), dbl("y"),
-            o.optBoolean("moved", false), o.optString("emp"), o.getLong("at"),
+            o.optBoolean("moved", false), o.optString("emp"), o.getLong("at"), dbl("z"),
         )
         "fin" -> FinishOp(id)
         "undo" -> UndoOp(id, o.getInt("inv"))

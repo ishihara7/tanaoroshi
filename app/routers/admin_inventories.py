@@ -25,13 +25,13 @@ def _rows(items: list[Item], d: Derived) -> list[dict]:
         rows.append({
             "kind": "確認済み" if r else "未確認", "token": it.token, "asset_no": it.asset_no or "", "name": it.name,
             "floor": r.floor if r and r.floor else it.floor, "x": r.x if r and r.x is not None else None,
-            "y": r.y if r and r.y is not None else None, "moved": bool(r and r.moved),
+            "y": r.y if r and r.y is not None else None, "z": r.z if r else None, "moved": bool(r and r.moved),
             "missed_last": it.missed_last, "method": r.method if r else "", "employee_no": (r.employee_no or "") if r else "",
             "read_at": r.read_at if r else None,
         })
     for token, r in d.unexpected.items():
         rows.append({
-            "kind": "想定外", "token": token, "asset_no": "", "name": token, "floor": r.floor, "x": r.x, "y": r.y,
+            "kind": "想定外", "token": token, "asset_no": "", "name": token, "floor": r.floor, "x": r.x, "y": r.y, "z": r.z,
             "moved": False, "missed_last": False, "method": r.method, "employee_no": r.employee_no or "", "read_at": r.read_at,
         })
     return rows
@@ -69,8 +69,8 @@ def inventory_csv(inventory_id: int, user: User = Depends(auth.require_admin), s
     rows = sorted(_rows(items, d), key=lambda r: (order[r["kind"]], r["asset_no"], r["token"]))
     return csv_response(
         f"inventory_{inv.id}.csv",
-        ["区分", "場所違い", "前回未確認", "管理番号", "タグ", "名称", "階", "東m", "北m", "方法", "社員番号", "読んだ日時"],
+        ["区分", "場所違い", "前回未確認", "管理番号", "タグ", "名称", "階", "東m", "北m", "高さm", "方法", "社員番号", "読んだ日時"],
         [(r["kind"], "はい" if r["moved"] else "", "はい" if r["missed_last"] else "", r["asset_no"], r["token"], r["name"],
-          r["floor"], r["x"], r["y"], {"qr": "QR", "manual": "手入力"}.get(r["method"], ""), r["employee_no"],
+          r["floor"], r["x"], r["y"], r["z"], {"qr": "QR", "manual": "手入力"}.get(r["method"], ""), r["employee_no"],
           jst(r["read_at"], "%Y-%m-%d %H:%M:%S")) for r in rows],
     )

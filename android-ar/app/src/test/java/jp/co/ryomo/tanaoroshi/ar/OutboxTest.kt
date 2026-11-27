@@ -67,9 +67,19 @@ class OutboxTest {
     // ---- 端末への保存（JSON） ----
 
     @Test
+    fun 高さのない古い送信待ちも_読める() {
+        val o = org.json.JSONObject("""{"t":"rec","id":"r","kind":"read","token":"a","method":"qr","floor":1,"x":1.0,"y":2.0,"moved":false,"emp":"","at":5}""")
+        assertNull((opFromJson(o) as RecordOp).z)
+        val p = org.json.JSONObject("""{"t":"put","id":"p","token":"a","name":"n","floor":1,"x":1.0,"y":2.0,"errM":0.5}""")
+        assertNull((opFromJson(p) as PutItemOp).z)
+    }
+
+    @Test
     fun すべての操作が_JSONで往復できる() {
         val ops = listOf<Op>(
             PutItemOp("p", "Tnote01", "ノートPC", 2, 3.5, -4.0, 0.8),
+            PutItemOp("p2", "Tnote02", "棚の上", 2, 3.5, -4.0, 0.8, 1.35),
+            RecordOp("r3", "read", "c", "qr", 1, 1.0, 2.0, false, "E1", 3000L, 0.45),
             DeleteItemOp("d", "Tnote01"),
             rec("r1"),
             RecordOp("r2", "unconfirm", "b", "manual", null, null, null, true, "", 2000L),

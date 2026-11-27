@@ -49,7 +49,7 @@ object Inventory {
             val p = item.placed
             if (item.token in s.confirmed) {
                 val m = s.moved[item.token]
-                val at = if (m != null && m.x != null && m.y != null) p.copy(x = m.x, y = m.y, floor = m.floor, located = true) else p
+                val at = if (m != null && m.x != null && m.y != null) p.copy(x = m.x, y = m.y, z = m.z, floor = m.floor, located = true) else p
                 item.copy(placed = at.copy(missedLast = false, wasUnexpected = false))
             } else {
                 item.copy(placed = p.copy(missedLast = true))
@@ -58,7 +58,7 @@ object Inventory {
             val located = it.x != null && it.y != null
             PlacedItem(
                 it.token,
-                Placed(it.name, it.x ?: 0.0, it.y ?: 0.0, if (located) newItemErrM else 0.0, it.floor, located, wasUnexpected = true),
+                Placed(it.name, it.x ?: 0.0, it.y ?: 0.0, if (located) newItemErrM else 0.0, it.floor, located, wasUnexpected = true, z = it.z),
             )
         }
         val summary = FinishSummary(

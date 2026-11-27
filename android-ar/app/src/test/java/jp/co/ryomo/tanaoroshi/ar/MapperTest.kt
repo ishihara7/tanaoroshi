@@ -65,6 +65,22 @@ class MapperTest {
         assertNotNull(parseTagUrl("https://example.com/a/A1/"))
         assertTrue(ErrorModel.estimate(10.0) > ErrorModel.estimate(0.0))
     }
+
+    // ---- 高さ ----
+
+    @Test
+    fun 高さは_アンカーの高さに_読んだ点からの上下の差を足す() {
+        // アンカーのQRは、床から1.4m。読んだときのカメラの高さ（AR座標のY）は 0.3
+        val r = ArReference(0.0, 0.0, 0.0, -1.0, 10.0, 20.0, 0.0, 0.3, 1.4)
+        assertEquals(1.4, r.toHeight(0.3), eps) // 読んだ点そのもの
+        assertEquals(0.5, r.toHeight(-0.6), eps) // 0.9m下がった（しゃがんで棚の下段を読んだ）
+        assertEquals(2.0, r.toHeight(0.9), eps) // 0.6m上がった
+    }
+
+    @Test
+    fun 高さの基準を渡さなければ_床からの高さはカメラの上下の差だけ() {
+        assertEquals(0.5, ref(0.0).toHeight(0.5), eps)
+    }
 }
 
 class SetupUrlTest {

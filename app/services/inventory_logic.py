@@ -22,6 +22,7 @@ class Item:
     missed_last: bool = False
     was_unexpected: bool = False
     asset_no: str | None = None
+    z: float | None = None  # 床からの高さ（m）。分からなければ None
 
 
 @dataclass(frozen=True)
@@ -38,6 +39,7 @@ class Read:
     moved: bool = False
     method: str = "qr"
     employee_no: str | None = None
+    z: float | None = None  # 床からの高さ（m）
 
 
 @dataclass(frozen=True)
@@ -85,13 +87,13 @@ def finish(
             continue
         at = it
         if r.moved and r.x is not None and r.y is not None and r.floor is not None:
-            at = replace(it, floor=r.floor, x=r.x, y=r.y, located=True)
+            at = replace(it, floor=r.floor, x=r.x, y=r.y, z=r.z, located=True)
         nxt.append(replace(at, missed_last=False, was_unexpected=False))
     for token, r in d.unexpected.items():
         asset_no, name = describe_unexpected(token)
         located = r.x is not None and r.y is not None
         nxt.append(Item(
-            token=token, name=name, floor=r.floor or 1, x=r.x or 0.0, y=r.y or 0.0,
+            token=token, name=name, floor=r.floor or 1, x=r.x or 0.0, y=r.y or 0.0, z=r.z if located else None,
             err_m=new_item_err_m if located else 0.0, located=located, was_unexpected=True, asset_no=asset_no,
         ))
     summary = {

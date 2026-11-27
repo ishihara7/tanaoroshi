@@ -14,9 +14,11 @@
   <input id="x" name="x" type="number" step="any" value="0">
   <label for="y">位置 北（m）</label>
   <input id="y" name="y" type="number" step="any" value="0">
+  <label for="z">QRを貼った高さ（床から、m）</label>
+  <input id="z" name="z" type="number" step="any" min="-10" max="100" value="0">
   <label for="facing_deg">QRを読むとき向く方向（北を0°とした時計回り。分からなければ空欄）</label>
   <input id="facing_deg" name="facing_deg" type="number" step="any">
-  <p class="hint">位置は、フロア図上の原点からの距離です。階ごとに、原点（0, 0）を決めておきます。</p>
+  <p class="hint">QRを貼った高さは、備品の高さを測る基準です（アプリは、アンカーを読んだ点からの上下の差を、この高さに足します。QRを、目の高さで読むなら、その高さ）。<br>位置は、フロア図上の原点からの距離です。階ごとに、原点（0, 0）を決めておきます。</p>
   <p><button type="submit">登録</button></p>
 </form>
 

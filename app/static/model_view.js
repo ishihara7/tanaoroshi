@@ -97,7 +97,9 @@ function clearOverlay() {
   }
 }
 
-function pinHeight() { return Number($("pin-h").value) || 0; }
+const DEFAULT_H = () => Number($("pin-h").value) || 0;
+// 備品の札の高さ：記録された高さがあれば、それ。なければ、画面で決めた高さ
+function pinHeight(it) { return it && it.z != null ? it.z : DEFAULT_H(); }
 
 function rebuildOverlay() {
   clearOverlay();
@@ -117,8 +119,8 @@ function rebuildOverlay() {
   for (const it of S.items) {
     if (filter !== "all" && it.status !== filter) continue;
     const col = COLORS[it.status];
-    const top = toModel(it.x, it.y, pinHeight());
-    const label = (it.asset_no ? it.asset_no + " " : "") + it.name;
+    const top = toModel(it.x, it.y, pinHeight(it));
+    const label = (it.asset_no ? it.asset_no + " " : "") + it.name + (it.z != null ? ` ${it.z.toFixed(1)}m` : "");
     overlay.add(marker(top, col, unit, label));
     // 床からの線
     const foot = toModel(it.x, it.y, 0);
@@ -150,13 +152,13 @@ function renderItems() {
   }
   for (const it of S.items) {
     const tr = body.insertRow();
-    tr.insertCell().textContent = (it.asset_no ? it.asset_no + " " : "") + it.name;
+    tr.insertCell().textContent = (it.asset_no ? it.asset_no + " " : "") + it.name + (it.z != null ? `（高さ ${it.z.toFixed(1)}m）` : "");
     const st = tr.insertCell(); st.textContent = STATUS_TEXT[it.status]; st.className = "st-" + it.status;
     const go = tr.insertCell();
     const b = document.createElement("button"); b.type = "button"; b.textContent = "ここへ"; b.className = "small";
     b.disabled = !transform;
     b.addEventListener("click", () => {
-      const p = A.planToModel(transform, it.x, it.y, pinHeight(), ySign, floorY);
+      const p = A.planToModel(transform, it.x, it.y, pinHeight(it), ySign, floorY);
       const v = new THREE.Vector3(...p);
       const d = v.clone().sub(viewer.controls.target);
       viewer.camera.position.add(d); viewer.controls.target.copy(v); viewer.controls.update();

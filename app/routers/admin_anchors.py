@@ -37,7 +37,7 @@ def _new_token(session: Session) -> str:
             return token
 
 
-def _parse(name: str, floor: str, x: str, y: str, facing: str):
+def _parse(name: str, floor: str, x: str, y: str, facing: str, z: str = "0"):
     """入力を検証する。誤りがあれば、(None, メッセージ)。向きは、空なら未設定（NULL）。"""
     name = name.strip()
     if not 1 <= len(name) <= 100:
@@ -45,6 +45,7 @@ def _parse(name: str, floor: str, x: str, y: str, facing: str):
     try:
         f = int(floor)
         xs, ys = float(x or 0), float(y or 0)
+        zs = float(z or 0)
         fd = float(facing) if facing.strip() else None
     except ValueError:
         return None, "階は整数、位置と向きは数値で入力してください。"
@@ -54,7 +55,9 @@ def _parse(name: str, floor: str, x: str, y: str, facing: str):
         return None, f"位置は、±{MAX_COORD_M}m以内の数値にしてください。"
     if fd is not None and not math.isfinite(fd):
         return None, "向きは、数値で入力してください。"
-    return {"name": name, "floor": f, "x_m": xs, "y_m": ys, "facing_deg": None if fd is None else fd % 360}, None
+    if not math.isfinite(zs) or not -10 <= zs <= 100:
+        return None, "QRを貼った高さは、-10〜100m の数値にしてください。"
+    return {"name": name, "floor": f, "x_m": xs, "y_m": ys, "z_m": zs, "facing_deg": None if fd is None else fd % 360}, None
 
 
 def _list_page(request, session, user, *, error=None, status=200):
@@ -76,11 +79,11 @@ def anchors_page(request: Request, user: User = Depends(auth.require_admin), ses
 
 @router.post("/admin/anchors")
 def anchor_create(request: Request, name: str = Form(""), floor: str = Form("1"), x: str = Form("0"), y: str = Form("0"),
-                  facing_deg: str = Form(""), csrf_token: str = Form(""),
+                  z: str = Form("0"), facing_deg: str = Form(""), csrf_token: str = Form(""),
                   user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
     if not auth.check_csrf(request, csrf_token):
         return _list_page(request, session, user, error=CSRF_ERROR, status=400)
-    data, err = _parse(name, floor, x, y, facing_deg)
+    data, err = _parse(name, floor, x, y, facing_deg, z)
     if err:
         return _list_page(request, session, user, error=err, status=400)
     a = Anchor(anchor_token=_new_token(session), **data)
@@ -100,14 +103,14 @@ def anchor_edit_page(token: str, request: Request, saved: int = 0, user: User = 
 
 @router.post("/admin/anchors/{token}")
 def anchor_update(token: str, request: Request, name: str = Form(""), floor: str = Form("1"), x: str = Form("0"),
-                  y: str = Form("0"), facing_deg: str = Form(""), csrf_token: str = Form(""),
+                  y: str = Form("0"), z: str = Form("0"), facing_deg: str = Form(""), csrf_token: str = Form(""),
                   user: User = Depends(auth.require_admin), session: Session = Depends(get_session)):
     a = session.get(Anchor, token)
     if a is None:
         return RedirectResponse("/admin/anchors", status_code=303)
     if not auth.check_csrf(request, csrf_token):
         return _edit_page(request, user, a, error=CSRF_ERROR, status=400)
-    data, err = _parse(name, floor, x, y, facing_deg)
+    data, err = _parse(name, floor, x, y, facing_deg, z)
     if err:
         return _edit_page(request, user, a, error=err, status=400)
     for k, v in data.items():

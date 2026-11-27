@@ -33,7 +33,7 @@ def test_get_anchor(client, make_user, anchors):  # noqa: F811
     login(client, make_user())
     r = client.get(f"/api/anchors/{anchors['ok']}")
     assert r.status_code == 200
-    assert r.json() == {"token": anchors["ok"], "name": "2F 東階段前", "floor": 2, "x_m": 12.5, "y_m": 3.0, "facing_deg": 90.0}
+    assert r.json() == {"token": anchors["ok"], "name": "2F 東階段前", "floor": 2, "x_m": 12.5, "y_m": 3.0, "z_m": 0.0, "facing_deg": 90.0}
 
 
 def test_inactive_or_unknown_anchor_is_404(client, make_user, anchors):  # noqa: F811

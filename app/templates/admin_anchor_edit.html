@@ -14,6 +14,8 @@
   <input id="x" name="x" type="number" step="any" value="{{ anchor.x_m }}">
   <label for="y">位置 北（m）</label>
   <input id="y" name="y" type="number" step="any" value="{{ anchor.y_m }}">
+  <label for="z">QRを貼った高さ（床から、m）</label>
+  <input id="z" name="z" type="number" step="any" min="-10" max="100" value="{{ anchor.z_m }}">
   <label for="facing_deg">QRを読むとき向く方向（北を0°とした時計回り。分からなければ空欄）</label>
   <input id="facing_deg" name="facing_deg" type="number" step="any" value="{{ anchor.facing_deg if anchor.facing_deg is not none else '' }}">
   <p><button type="submit">保存</button> <a href="/admin/anchors">一覧へ</a></p>

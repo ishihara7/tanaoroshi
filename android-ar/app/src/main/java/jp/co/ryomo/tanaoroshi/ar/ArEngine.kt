@@ -26,7 +26,7 @@ import kotlin.math.abs
 import kotlin.math.hypot
 
 /** QRを読んだ瞬間の、カメラの位置と向き（ARの世界座標）。 */
-class PoseSnapshot(val px: Double, val pz: Double, val fx: Double, val fz: Double)
+class PoseSnapshot(val px: Double, val pz: Double, val fx: Double, val fz: Double, val py: Double = 0.0)
 
 /** いまの状態（GLスレッドが更新し、画面が読む）。 */
 class Live(
@@ -41,6 +41,8 @@ class Live(
     val lostTracking: Boolean,
     /** いま見えている特徴点の数（少ないと、追跡が途切れやすい）。不明は -1 */
     val points: Int = -1,
+    /** いまの、床からの高さ（m）。アンカーのQRを読んでいれば。なければ null */
+    val mapZ: Double? = null,
 )
 
 /**
@@ -78,6 +80,7 @@ class ArEngine(
     private var appliedRotation = -1
     private var lastX = 0.0
     private var lastZ = 0.0
+    private var lastY = 0.0
     private var hasLast = false
     private var walked = 0.0
     private var lost = false
@@ -107,8 +110,8 @@ class ArEngine(
     private var lastTextAt = 0L
 
     /** アンカーのQRを読んだ瞬間のカメラの位置と向きを、そのアンカーの座標に結びつける。 */
-    fun setReference(pose: PoseSnapshot, anchorX: Double, anchorY: Double, thetaDeg: Double) {
-        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, anchorX, anchorY, thetaDeg)
+    fun setReference(pose: PoseSnapshot, anchorX: Double, anchorY: Double, thetaDeg: Double, anchorZ: Double = 0.0) {
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, anchorX, anchorY, thetaDeg, pose.py, anchorZ)
         fix = null
         walked = 0.0
         lost = false
@@ -118,10 +121,10 @@ class ArEngine(
      * 位置が分かっている点（登録済みの備品）のQRを読んだとき、向きは保ったまま、位置だけを合わせ直す。
      * 追跡が途切れたあとの、立て直しに使う。ARの世界座標そのものが変わっていたら、アンカーを読み直す必要がある。
      */
-    fun correctPosition(pose: PoseSnapshot, x: Double, y: Double) {
+    fun correctPosition(pose: PoseSnapshot, x: Double, y: Double, z: Double? = null) {
         val old = reference ?: return
         val bearing = old.bearingOf(pose.fx, pose.fz)
-        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing)
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing, pose.py, z ?: old.toHeight(pose.py))
         walked = 0.0
         lost = false
     }
@@ -136,7 +139,7 @@ class ArEngine(
      * 向き：前回の目印から、ARで測った移動の向きと、地図上の向きの差で、回転を直す（目印が2つ以上あるとき）。
      * @return 画面に出す補足（向きを直したときだけ）
      */
-    fun fixAtKnownPoint(pose: PoseSnapshot, x: Double, y: Double): String? {
+    fun fixAtKnownPoint(pose: PoseSnapshot, x: Double, y: Double, z: Double? = null): String? {
         val old = reference ?: return null
         var bearing = old.bearingOf(pose.fx, pose.fz)
         var note: String? = null
@@ -152,7 +155,8 @@ class ArEngine(
                 note = "向きを %.0f° 直しました。".format(delta)
             }
         }
-        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing)
+        // 高さ：その備品の高さが分かっていれば、それに合わせる（分からなければ、これまでの高さを引き継ぐ）
+        reference = ArReference(pose.px, pose.pz, pose.fx, pose.fz, x, y, bearing, pose.py, z ?: old.toHeight(pose.py))
         fix = Fix(pose.px, pose.pz, x, y)
         walked = 0.0
         lost = false
@@ -171,6 +175,9 @@ class ArEngine(
 
     /** 現在位置を、フロア図上の座標にする（QRを読んだ時点のカメラの位置から）。 */
     fun mapAt(pose: PoseSnapshot): Pair<Double, Double>? = reference?.toMap(pose.px, pose.pz)
+
+    /** 現在位置の、床からの高さ（m）。アンカーのQRを読んでいなければ null。 */
+    fun heightAt(pose: PoseSnapshot): Double? = reference?.toHeight(pose.py)
 
     /** @return 準備できたら true */
     fun resume(): String? {
@@ -301,6 +308,7 @@ class ArEngine(
         val pose = camera.pose
         val px = pose.tx().toDouble()
         val pz = pose.tz().toDouble()
+        val py = pose.ty().toDouble()
         val f = pose.rotateVector(floatArrayOf(0f, 0f, -1f))
         val fh = hypot(f[0].toDouble(), f[2].toDouble())
         if (fh > 0.2) { // カメラが真上や真下を向いているときは、向きを更新しない
@@ -331,7 +339,7 @@ class ArEngine(
                     // 座標系が変わっていたら、途切れる前の方角に、ジャイロが回った量を足す（ARの座標系には頼らない）
                     val bearing = if (frameChanged) bearingAfterLoss(lossBearing, gyroThen, gyroNow)
                     else ref0.bearingOf(lastFx, lastFz)
-                    reference = ArReference(px, pz, lastFx, lastFz, tx, ty, bearing)
+                    reference = ArReference(px, pz, lastFx, lastFz, tx, ty, bearing, py, ref0.toHeight(lastY))
                     walked += PdrBridge.distanceOf(bdx, bdz) * 0.15 + lostSec * 0.3
                 } else {
                     walked += lostSec * LOSS_PENALTY_M_PER_S
@@ -351,17 +359,17 @@ class ArEngine(
             val step = hypot(px - lastX, pz - lastZ)
             if (step < 1.0) walked += step // 追跡が飛んだときの、ありえない距離は足さない
         }
-        lastX = px; lastZ = pz; hasLast = true
+        lastX = px; lastZ = pz; lastY = py; hasLast = true
 
         val ref = reference
         live = if (ref == null) {
             Live(true, "追跡できています。アンカーのQRを読み取ってください。", null, null, null, 0.0, false)
         } else {
             val (mx, my) = ref.toMap(px, pz)
-            Live(true, "", mx, my, ref.bearingOf(lastFx, lastFz), walked, lost, countPoints(frame))
+            Live(true, "", mx, my, ref.bearingOf(lastFx, lastFz), walked, lost, countPoints(frame), ref.toHeight(py))
         }
 
-        maybeDecode(frame, PoseSnapshot(px, pz, lastFx, lastFz))
+        maybeDecode(frame, PoseSnapshot(px, pz, lastFx, lastFz, py))
     }
 
     private fun countPoints(frame: com.google.ar.core.Frame): Int = try {

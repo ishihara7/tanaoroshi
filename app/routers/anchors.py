@@ -13,7 +13,7 @@ router = APIRouter()
 
 
 def _to_dict(a: Anchor) -> dict:
-    return {"token": a.anchor_token, "name": a.name, "floor": a.floor, "x_m": a.x_m, "y_m": a.y_m,
+    return {"token": a.anchor_token, "name": a.name, "floor": a.floor, "x_m": a.x_m, "y_m": a.y_m, "z_m": a.z_m,
             "facing_deg": a.facing_deg}
 
 

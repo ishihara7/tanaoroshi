@@ -9,7 +9,7 @@ import java.net.URLEncoder
 import java.time.Instant
 
 /** サーバーのアンカー（位置合わせの基準点）。向きは、未設定なら null。 */
-data class ServerAnchor(val token: String, val name: String, val floor: Int, val xM: Double, val yM: Double, val facingDeg: Double?)
+data class ServerAnchor(val token: String, val name: String, val floor: Int, val xM: Double, val yM: Double, val facingDeg: Double?, val zM: Double = 0.0)
 
 /** 台帳（管理対象）の備品。token：タグのトークン（QRのURLの最後の部分）。 */
 data class LedgerAsset(val token: String, val assetNo: String, val name: String)
@@ -119,6 +119,7 @@ class ApiClient(baseUrl: String, private val token: String? = null, private val 
                 ServerAnchor(
                     x.getString("token"), x.getString("name"), x.getInt("floor"), x.getDouble("x_m"), x.getDouble("y_m"),
                     if (x.isNull("facing_deg")) null else x.getDouble("facing_deg"),
+                    x.optDouble("z_m", 0.0),
                 )
             }
         }
@@ -131,6 +132,7 @@ class ApiClient(baseUrl: String, private val token: String? = null, private val 
                         x.getString("name"), x.getDouble("x"), x.getDouble("y"), x.getDouble("err_m"), x.getInt("floor"),
                         x.getBoolean("located"), x.getBoolean("missed_last"), x.getBoolean("was_unexpected"),
                         if (x.isNull("asset_no")) null else x.getString("asset_no"),
+                        if (!x.has("z") || x.isNull("z")) null else x.getDouble("z"),
                     ),
                 )
             }
@@ -146,7 +148,7 @@ class ApiClient(baseUrl: String, private val token: String? = null, private val 
     }
 
     fun putItem(op: PutItemOp) {
-        val body = JSONObject().put("floor", op.floor).put("x", op.x).put("y", op.y).put("err_m", op.errM).put("name", op.name)
+        val body = JSONObject().put("floor", op.floor).put("x", op.x).put("y", op.y).put("err_m", op.errM).put("name", op.name).putOpt("z", op.z)
         check(request("PUT", "/api/ar/items/${op.token}", body.toString().toByteArray(), withCsrf = true))
     }
 
@@ -160,7 +162,7 @@ class ApiClient(baseUrl: String, private val token: String? = null, private val 
         for (r in ops) {
             arr.put(
                 JSONObject().put("client_id", r.id).put("kind", r.kind).put("token", r.token).put("method", r.method)
-                    .putOpt("floor", r.floor).putOpt("x", r.x).putOpt("y", r.y).put("moved", r.moved)
+                    .putOpt("floor", r.floor).putOpt("x", r.x).putOpt("y", r.y).putOpt("z", r.z).put("moved", r.moved)
                     .put("employee_no", r.employeeNo).put("read_at", Instant.ofEpochMilli(r.readAtMs).toString()),
             )
         }

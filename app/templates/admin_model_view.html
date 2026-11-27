@@ -70,7 +70,7 @@
     <label>表示
       <select id="filter"><option value="all">すべて</option><option value="missed">未確認だけ</option><option value="unexpected">{{ "想定外だけ" if inventory else "場所違いだけ" }}</option>{% if inventory %}<option value="moved">場所違いだけ</option>{% endif %}<option value="ok">{{ "確認済みだけ" if inventory else "通常だけ" }}</option></select>
     </label>
-    <label>札の高さ（m）<input id="pin-h" type="number" step="0.1" min="0" max="5"></label>
+    <label>高さが記録されていない備品の札の高さ（m）<input id="pin-h" type="number" step="0.1" min="0" max="5"></label>
     <label><input id="show-anchors" type="checkbox" checked>アンカーを表示</label>
     <label><input id="show-err" type="checkbox" checked>位置のずれの範囲を表示</label>
   </div>

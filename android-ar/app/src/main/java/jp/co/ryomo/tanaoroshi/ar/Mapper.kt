@@ -22,6 +22,9 @@ class ArReference(
     val anchorX: Double,
     val anchorY: Double,
     val thetaDeg: Double,
+    /** 基準点での、カメラの高さ（ARの世界座標のY）と、そのときの床からの高さ（m）。高さを測る基準 */
+    val p0y: Double = 0.0,
+    val anchorZ: Double = 0.0,
 ) {
     /** 基準点で向いていた水平方向（長さ1） */
     val f0x: Double
@@ -48,6 +51,9 @@ class ArReference(
             anchorY + forward * cosT - right * sinT,
         )
     }
+
+    /** ARの高さ（py）を、床からの高さ（m）にする。基準点からの上下の差を、基準点の高さに足す。 */
+    fun toHeight(py: Double): Double = anchorZ + (py - p0y)
 
     /** ARの水平方向（fx, fz）を、フロア図上の方位（北を0°とした時計回り、0〜360）にする。 */
     fun bearingOf(fx: Double, fz: Double): Double {
