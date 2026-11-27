@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app import auth
 from app.db import get_session
-from app.models import Inventory, InventoryRecord, User
+from app.models import FloorModel, Inventory, InventoryRecord, User
 from app.routers.admin_csv import csv_response
 from app.services import inventories as svc
 from app.services.inventory_logic import Derived, Item
@@ -54,8 +54,9 @@ def inventory_page(inventory_id: int, request: Request, user: User = Depends(aut
     items, d = svc.view_of(session, inv)
     rows = _rows(items, d)
     groups = {k: [r for r in rows if r["kind"] == k] for k in ("確認済み", "未確認", "想定外")}
+    model_floors = sorted(session.scalars(select(FloorModel.floor)))  # 3Dモデルのある階
     return templates.TemplateResponse(request, "admin_inventory.html", {
-        "user": user, "inv": inv, "groups": groups, "moved": [r for r in groups["確認済み"] if r["moved"]]})
+        "user": user, "inv": inv, "groups": groups, "model_floors": model_floors, "moved": [r for r in groups["確認済み"] if r["moved"]]})
 
 
 @router.get("/admin/inventories/{inventory_id}/export.csv")

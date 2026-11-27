@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}3Dモデル{% endblock %}
+{% block content %}
+<h1>3Dモデル（3DGS）</h1>
+<p class="note">フロアを3DGSでモデル化したファイルを、階ごとに登録します。登録したら、アンカーの位置でフロア図と座標を合わせて、備品の位置を、モデルの上に表示します。</p>
+{% if error %}<p class="err">{{ error }}</p>{% endif %}
+
+<table>
+  <tr><th>階</th><th>モデル</th><th></th></tr>
+  {% for f in floors %}
+  {% set m = models.get(f) %}
+  <tr>
+    <td>{{ f }}階</td>
+    <td>
+      {% if m %}{{ m.original_name or m.filename }}（{{ '%.1f'|format(m.size_bytes / 1048576) }} MB）<br>
+        <span class="note">{% if m.scale is not none %}座標合わせ済み（ずれ {{ '%.2f'|format(m.rms_m) }}m）{% else %}座標は、まだ合わせていません{% endif %}</span>
+      {% else %}<span class="note">未登録</span>{% endif %}
+    </td>
+    <td>{% if m %}<a href="/admin/models/{{ f }}">開く</a>{% endif %}</td>
+  </tr>
+  {% endfor %}
+</table>
+
+<h2>モデルを登録する</h2>
+<form method="post" action="/admin/models/upload" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <label for="floor">階（地下は負の数）</label>
+  <input id="floor" name="floor" type="number" min="-9" max="99" value="1" required>
+  <label for="file">ファイル（.ply／.splat／.ksplat。上限 800MB）</label>
+  <input id="file" name="file" type="file" accept=".ply,.splat,.ksplat" required>
+  <p class="hint">同じ階に登録済みのモデルがあると、置き換わります。置き換えると、座標は合わせ直しになります。<br>
+    試すだけなら、<code>python tools/make_dummy_ply.py</code> で作れるダミーのモデルを使えます。</p>
+  <p><button type="submit">登録</button></p>
+</form>
+{% endblock %}

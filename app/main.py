@@ -11,7 +11,7 @@ from app.auth import RedirectRequired
 from app.config import load_settings
 from app.crypto import ensure_key
 from app.db import Base, get_engine
-from app.routers import (account, admin, admin_anchors, admin_devices, anchors, admin_assets, admin_csv, admin_inventories, admin_labels, ar_api,
+from app.routers import (account, admin, admin_anchors, admin_devices, anchors, admin_assets, admin_csv, admin_inventories, admin_labels, admin_models, ar_api,
                          assets, tags)
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -53,6 +53,7 @@ app.include_router(admin_labels.router)
 app.include_router(admin_anchors.router)
 app.include_router(admin_devices.router)
 app.include_router(admin_inventories.router)
+app.include_router(admin_models.router)
 app.include_router(anchors.router)
 app.include_router(ar_api.router)
 

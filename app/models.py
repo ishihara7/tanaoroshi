@@ -165,3 +165,26 @@ class EnrollCode(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+
+
+class FloorModel(Base):
+    """階ごとの3Dモデル（3DGS）。モデルの座標とフロア図の座標を合わせる変換も、ここに持つ。
+    変換：フロア図の座標 = 縮尺 × 回転 × モデルの地面の座標 + 移動（static/model_align.js と同じ式）。
+    モデルのファイルは、var/models/ にある。"""
+
+    __tablename__ = "floor_models"
+
+    floor: Mapped[int] = mapped_column(Integer, primary_key=True)
+    filename: Mapped[str] = mapped_column(String(60))  # var/models/ の中の名前（floor_<階>.<拡張子>）
+    original_name: Mapped[str] = mapped_column(Unicode(200), default="")
+    size_bytes: Mapped[int] = mapped_column(Integer, default=0)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)
+    y_sign: Mapped[int] = mapped_column(Integer, default=1)  # 1：Y軸が上／-1：下
+    floor_y: Mapped[float] = mapped_column(Float, default=0.0)  # 床の高さ（モデルのY）
+    scale: Mapped[float | None] = mapped_column(Float, nullable=True)  # 空なら、まだ合わせていない
+    theta_deg: Mapped[float | None] = mapped_column(Float, nullable=True)
+    tx: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ty: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rms_m: Mapped[float | None] = mapped_column(Float, nullable=True)  # 合わせたときの、ずれ（m）
+    pairs_json: Mapped[str | None] = mapped_column(UnicodeText, nullable=True)  # 対応点（編集を続けられるように）
+    aligned_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

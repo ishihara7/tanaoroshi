@@ -6,6 +6,7 @@
 <div class="chips">
   <a href="/admin/inventories/{{ inv.id }}/export.csv">CSVでダウンロード</a>
   <a href="/admin/inventories">一覧へ</a>
+  {% for f in model_floors %}<a href="/admin/models/{{ f }}?inv={{ inv.id }}">{{ f }}階を3Dで見る</a>{% endfor %}
 </div>
 <p>確認済み {{ groups['確認済み']|length }}件（うち場所違い {{ moved|length }}件）／未確認 {{ groups['未確認']|length }}件／想定外 {{ groups['想定外']|length }}件</p>
 

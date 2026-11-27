@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}{{ model.floor }}階の3Dモデル{% endblock %}
+{% block head %}
+<script type="importmap">{"imports": {"three": "/static/vendor/three.module.js"}}</script>
+<style>
+  main { max-width: 1100px; }
+  #viewer-wrap { position: relative; scroll-margin-top: 110px; }  /* 上のバーに隠れないように */
+  #viewer { position: relative; width: 100%; height: 62vh; min-height: 360px; background: #0b1020; border-radius: var(--radius); overflow: hidden; }
+  #pick-banner { position: absolute; left: 12px; right: 12px; top: 12px; z-index: 5; background: #111827ee; color: #fff; padding: 8px 12px; border-radius: 10px; font-weight: 600; font-size: .9rem; pointer-events: none; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; margin: 10px 0; }
+  .bar label { margin: 0; display: inline-flex; gap: 6px; align-items: center; font-weight: 500; }
+  .bar input[type="number"], .bar select { width: auto; min-width: 90px; }
+  button.small { min-height: 32px; padding: 3px 10px; font-size: .84rem; margin-right: 6px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; margin-right: 12px; font-size: .86rem; }
+  .legend i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  .st-missed { color: #d97706; font-weight: 700; } .st-unexpected { color: #c026d3; font-weight: 700; }
+</style>
+{% endblock %}
+{% block content %}
+<p class="note"><a href="/admin/models">← 3Dモデルの一覧</a></p>
+<h1>{{ model.floor }}階の3Dモデル</h1>
+{% if inventory %}
+<p class="note">棚卸（{{ inventory.started_at|jst }}）の結果を表示しています。
+  <a href="/admin/inventories/{{ inventory.id }}">結果の一覧へ</a> ／ <a href="/admin/models/{{ model.floor }}">いまの予定を表示する</a></p>
+{% endif %}
+
+<div id="viewer-wrap" data-csrf="{{ csrf_token(request) }}">
+  <div id="pick-banner" hidden></div>
+  <div id="viewer"></div>
+</div>
+<div class="bar">
+  <button type="button" id="view-top" class="small">真上から見る</button>
+  <button type="button" id="view-side" class="small">斜めから見る</button>
+  <span class="note">ドラッグで回転、ホイールで拡大・縮小、右ドラッグで移動。</span>
+</div>
+
+<section class="card">
+  <h2 style="margin-top:0">1. 座標合わせ</h2>
+  <p class="note">モデルの縮尺・向きは、作ったときに決まるため、フロア図とはずれています。アンカー（位置の分かる基準点）を、モデルの上で指定すると、合わせられます。<br>
+    ①「モデル上で指定」を押す　②モデルを真上から見た画面で、そのアンカーがある場所の、<b>床に接している所</b>をクリック　③ 3つ以上で、ずれの確認ができます。</p>
+  <table>
+    <thead><tr><th>アンカー</th><th>フロア図の位置（東m, 北m）</th><th>状態</th><th></th></tr></thead>
+    <tbody id="anchors-body"></tbody>
+  </table>
+  <div class="bar">
+    <label>床の高さ（モデルの座標）<input id="floor-y" type="number" step="any"></label>
+    <label>上下の向き
+      <select id="y-sign"><option value="1">Y軸が上</option><option value="-1">Y軸が下（COLMAPの出力そのまま等）</option></select>
+    </label>
+  </div>
+  <p class="hint">モデルが逆さまに見えるときは、上下の向きを変えます。床の高さは、自動で推定します（クリック位置の高さの基準）。</p>
+  <p id="result" class="note"></p>
+  <div class="bar">
+    <button type="button" id="save">この座標を保存</button>
+    <button type="button" id="reset" class="secondary">合わせ直す</button>
+    <span id="save-status" class="note"></span>
+  </div>
+</section>
+
+<section class="card" id="pin-controls" hidden>
+  <h2 style="margin-top:0">2. 備品の位置</h2>
+  <div class="legend">
+    <span><i style="background:#22c55e"></i>{{ "確認済み" if inventory else "通常" }}</span>
+    {% if inventory %}<span><i style="background:#06b6d4"></i>場所違い（予定と違う場所で確認）</span>{% endif %}
+    <span><i style="background:#f59e0b"></i>未確認{{ "" if inventory else "（前回の棚卸で確かめられず）" }}</span>
+    <span><i style="background:#d946ef"></i>{{ "想定外" if inventory else "場所違い" }}（予定にないのに読まれた）</span>
+    <span><i style="background:#38bdf8"></i>アンカー</span>
+  </div>
+  <div class="bar">
+    <label>表示
+      <select id="filter"><option value="all">すべて</option><option value="missed">未確認だけ</option><option value="unexpected">{{ "想定外だけ" if inventory else "場所違いだけ" }}</option>{% if inventory %}<option value="moved">場所違いだけ</option>{% endif %}<option value="ok">{{ "確認済みだけ" if inventory else "通常だけ" }}</option></select>
+    </label>
+    <label>札の高さ（m）<input id="pin-h" type="number" step="0.1" min="0" max="5"></label>
+    <label><input id="show-anchors" type="checkbox" checked>アンカーを表示</label>
+    <label><input id="show-err" type="checkbox" checked>位置のずれの範囲を表示</label>
+  </div>
+  <p class="hint">札は、常に手前に表示されます（モデルの壁の向こうの備品も、見えます）。位置は、{{ "棚卸の結果（未確認は、予定の位置）" if inventory else "いまの予定" }}（階・x・y）で、ARの誤差は±0.6m程度あります。</p>
+  <table>
+    <thead><tr><th>備品</th><th>状態</th><th></th></tr></thead>
+    <tbody id="items-body"></tbody>
+  </table>
+</section>
+
+<form method="post" action="/admin/models/{{ model.floor }}/delete" class="inline" onsubmit="return confirm('このモデルと座標を、削除します。よろしいですか？')">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token(request) }}">
+  <button type="submit" class="secondary">このモデルを削除</button>
+</form>
+
+<script type="application/json" id="state">{{ state | tojson }}</script>
+<script src="/static/model_align.js"></script>
+<script type="module" src="/static/model_view.js"></script>
+{% endblock %}
